@@ -17,15 +17,15 @@
 }
 
 :root.light {
-  --bg: 42 56% 93%;
-  --panel: 0 0% 100%;
-  --text: 238 37% 13%;
-  --muted: 233 12% 37%;
-  --accent: 246 67% 42%;
-  --cyan: 187 80% 30%;
-  --punch: 30 97% 45%;
-  --shadow-offset: 238 36% 22%;
-  --panel-border: 238 35% 18%;
+  --bg: 35 100% 96%;
+  --panel: 36 100% 99%;
+  --text: 221 39% 11%;
+  --muted: 222 16% 35%;
+  --accent: 222 84% 43%;
+  --cyan: 172 90% 28%;
+  --punch: 11 90% 52%;
+  --shadow-offset: 221 39% 11%;
+  --panel-border: 221 39% 11%;
 }
 
 * {
@@ -54,5 +54,35 @@ body {
 }
 
 :root.light .neo-panel {
-  box-shadow: 10px 10px 0 hsl(var(--shadow-offset));
+  box-shadow: 12px 12px 0 hsl(var(--shadow-offset));
+}
+
+:root.light body {
+  background-image:
+    linear-gradient(hsl(var(--text) / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--text) / 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+:root.light button {
+  box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+}
+
+:root.light button:hover {
+  box-shadow: 8px 8px 0 hsl(var(--punch));
+}
+
+:root.light input,
+:root.light textarea {
+  background: hsl(var(--panel));
+  border-color: hsl(var(--panel-border));
+  color: hsl(var(--text));
+}
+
+:root.light article {
+  box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+}
+
+:root.light .code-font {
+  letter-spacing: 0.03em;
 }

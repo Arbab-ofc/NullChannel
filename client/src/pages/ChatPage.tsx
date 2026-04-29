@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2 } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -19,6 +19,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState('');
   const [myRooms, setMyRooms] = useState<Array<{ code: string; expires_at: string }>>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -51,6 +52,33 @@ export default function ChatPage() {
     if (!room || !text.trim()) return;
     socket.emit('send-message', { roomCode: room.code, senderId, type: 'text', content: text.trim() });
     setText('');
+  };
+
+  const sendImage = async (file: File) => {
+    if (!room) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) return;
+
+    setUploadingImage(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('roomCode', room.code);
+      form.append('type', 'image');
+      const res = await api.post('/media/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      socket.emit('send-message', {
+        roomCode: room.code,
+        senderId,
+        type: 'image',
+        fileUrl: res.data.data.fileUrl,
+        filePath: res.data.data.fileId ?? res.data.data.filePath
+      });
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const leaveRoom = async () => {
@@ -106,8 +134,8 @@ export default function ChatPage() {
         </article>)}
       </section>
 
-      <footer className="neo-panel p-3">
-        <div className="flex flex-col gap-2 sm:flex-row">
+    <footer className="neo-panel p-3">
+      <div className="flex flex-col gap-2 sm:flex-row">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -120,9 +148,24 @@ export default function ChatPage() {
               }
             }}
           />
-          <Button className="h-12 sm:w-40" onClick={send}>Send</Button>
-        </div>
-      </footer>
+        <label className="inline-flex h-12 cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text shadow-panel hover:-translate-y-0.5 hover:translate-x-0.5 hover:shadow-punch">
+          <ImagePlus className="mr-2 h-4 w-4" />
+          {uploadingImage ? 'Uploading' : 'Image'}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            disabled={uploadingImage}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) sendImage(file).catch(() => undefined);
+              e.currentTarget.value = '';
+            }}
+          />
+        </label>
+        <Button className="h-12 sm:w-40" onClick={send}>Send</Button>
+      </div>
+    </footer>
     </section>
 
     <aside className="neo-panel h-fit p-4">

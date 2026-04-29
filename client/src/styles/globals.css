@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color: #ede9fe; background: #05050a; }
+body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: #05050a; color: #ede9fe; }
+.code-font { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

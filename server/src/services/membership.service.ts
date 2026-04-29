@@ -1,8 +1,8 @@
 import { supabase } from '../config/supabase.js';
 
-export const joinMembership = async (roomId: string, senderId: string) => {
+export const joinMembership = async (roomId: string, senderId: string, senderName: string) => {
   const { error } = await supabase.from('room_members').upsert(
-    { room_id: roomId, sender_id: senderId, left_at: null },
+    { room_id: roomId, sender_id: senderId, sender_name: senderName, left_at: null },
     { onConflict: 'room_id,sender_id' }
   );
   if (error) throw error;
@@ -30,7 +30,7 @@ export const getActiveRoomsForSender = async (senderId: string) => {
 export const getParticipantsForRoom = async (roomId: string) => {
   const { data, error } = await supabase
     .from('room_members')
-    .select('sender_id, joined_at')
+    .select('sender_id, sender_name, joined_at')
     .eq('room_id', roomId)
     .is('left_at', null)
     .order('joined_at', { ascending: true });

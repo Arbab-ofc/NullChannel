@@ -9,7 +9,7 @@ import { useCountdown } from '../hooks/useCountdown';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { decryptBytes, decryptText, encryptBytes, encryptText, getRoomSecret } from '../lib/crypto';
 
-type Msg = { id?: string; sender_id: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
+type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
 type Room = { id: string; code: string; creator_id: string; expires_at: string };
 
 export default function ChatPage() {
@@ -23,6 +23,8 @@ export default function ChatPage() {
   const [myRooms, setMyRooms] = useState<Array<{ code: string; expires_at: string }>>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [nameInput, setNameInput] = useState('');
+  const [senderName, setSenderName] = useState(() => localStorage.getItem('nullchannel_sender_name') ?? '');
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -41,28 +43,28 @@ export default function ChatPage() {
   }, [code, loadMyRooms]);
 
   useEffect(() => {
-    if (!room) return;
-    socket.emit('join-room', { roomCode: room.code, senderId });
+    if (!room || !senderName) return;
+    socket.emit('join-room', { roomCode: room.code, senderId, senderName });
     socket.on('receive-message', (msg) => setMessages((p) => [...p, msg]));
     socket.on('room-expired', () => {
       setRoom(null);
       loadMyRooms().catch(() => undefined);
     });
     return () => { socket.off('receive-message'); socket.off('room-expired'); };
-  }, [room, socket, senderId, loadMyRooms]);
+  }, [room, socket, senderId, senderName, loadMyRooms]);
 
   const send = () => {
-    if (!room || !text.trim()) return;
+    if (!room || !text.trim() || !senderName) return;
     const secret = getRoomSecret();
     if (!secret) return;
     encryptText(text.trim(), secret).then((enc) => {
-      socket.emit('send-message', { roomCode: room.code, senderId, type: 'text', content: enc });
+      socket.emit('send-message', { roomCode: room.code, senderId, senderName, type: 'text', content: enc });
     }).catch(() => undefined);
     setText('');
   };
 
   const sendImage = async (file: File) => {
-    if (!room) return;
+    if (!room || !senderName) return;
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) return;
 
@@ -83,6 +85,7 @@ export default function ChatPage() {
       socket.emit('send-message', {
         roomCode: room.code,
         senderId,
+        senderName,
         type: 'image',
         content: JSON.stringify({ iv: encrypted.iv, mime: file.type }),
         fileUrl: res.data.data.fileUrl,
@@ -141,6 +144,30 @@ export default function ChatPage() {
   </main>;
 
   return <main className="mx-auto grid min-h-screen w-full max-w-6xl gap-4 bg-bg px-4 py-5 sm:grid-cols-[1fr_280px] sm:px-8 sm:py-8">
+    {!senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+      <div className="neo-panel w-full max-w-md p-6">
+        <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
+        <h3 className="mt-2 text-xl font-bold uppercase">Name required to join room chat</h3>
+        <input
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          placeholder="Your name"
+          className="mt-4 h-11 w-full border-2 border-accent bg-bg px-3"
+          maxLength={24}
+        />
+        <Button
+          className="mt-3 w-full"
+          onClick={() => {
+            const value = nameInput.trim();
+            if (value.length < 2) return;
+            localStorage.setItem('nullchannel_sender_name', value);
+            setSenderName(value);
+          }}
+        >
+          Join Chat
+        </Button>
+      </div>
+    </div>}
     <section className="flex min-h-[80vh] flex-col gap-4">
       <header className="neo-panel p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -166,6 +193,7 @@ export default function ChatPage() {
       <section className="neo-panel flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
         {messages.map((m, i) => <article key={m.id ?? i} className={`max-w-[85%] border-2 p-3 text-sm shadow-panel sm:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
+          <p className="mb-1 text-[10px] uppercase tracking-wider text-muted">{m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
           {m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
           {m.type === 'image' && (mediaUrls[m.id ?? String(i)] ? <img src={mediaUrls[m.id ?? String(i)]} className="max-h-72 w-full object-cover" /> : <p className="text-xs text-muted">Decrypting image...</p>)}
           {m.type === 'voice' && (mediaUrls[m.id ?? String(i)] ? <audio controls src={mediaUrls[m.id ?? String(i)]} className="w-full" /> : <p className="text-xs text-muted">Decrypting audio...</p>)}

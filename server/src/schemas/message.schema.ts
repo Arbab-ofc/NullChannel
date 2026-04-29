@@ -5,6 +5,7 @@ const senderId = z.string().uuid();
 export const socketMessageSchema = z.object({
   roomCode: z.string().trim().length(8).regex(/^[A-Z0-9]+$/),
   senderId,
+  senderName: z.string().trim().min(2).max(24),
   type: z.enum(['text', 'image', 'voice']),
   content: z.string().trim().max(12000).optional(),
   fileUrl: z.string().url().optional(),

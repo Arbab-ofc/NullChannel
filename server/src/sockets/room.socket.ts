@@ -5,7 +5,7 @@ import { getRoomByCode } from '../services/room.service.js';
 import { saveMessage } from '../services/message.service.js';
 import { joinMembership, leaveMembership } from '../services/membership.service.js';
 
-const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid() });
+const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24) });
 const leaveSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid() });
 
 export const registerRoomSocket = (io: Server, socket: Socket) => {
@@ -17,7 +17,7 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
     if (!room) return socket.emit('socket-error', { code: 'ROOM_NOT_FOUND', message: 'Channel not found or expired.' });
 
     socket.join(room.id);
-    await joinMembership(room.id, parsed.data.senderId);
+    await joinMembership(room.id, parsed.data.senderId, parsed.data.senderName);
     socket.emit('room-joined', room);
   });
 
@@ -31,6 +31,7 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
     const message = await saveMessage(room.id, {
       roomCode: parsed.data.roomCode,
       senderId: parsed.data.senderId,
+      senderName: parsed.data.senderName,
       type: parsed.data.type,
       content: parsed.data.content,
       fileUrl: parsed.data.fileUrl,

@@ -12,6 +12,7 @@ create table if not exists messages (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references rooms(id) on delete cascade,
   sender_id text not null,
+  sender_name text not null,
   type text not null check (type in ('text','image','voice')),
   content text,
   file_url text,
@@ -28,6 +29,7 @@ create table if not exists room_members (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references rooms(id) on delete cascade,
   sender_id text not null,
+  sender_name text not null,
   joined_at timestamptz not null default now(),
   left_at timestamptz,
   unique(room_id, sender_id)

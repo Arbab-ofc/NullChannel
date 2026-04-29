@@ -17,15 +17,15 @@
 }
 
 :root.light {
-  --bg: 48 43% 95%;
+  --bg: 42 56% 93%;
   --panel: 0 0% 100%;
-  --text: 244 33% 16%;
-  --muted: 238 14% 42%;
-  --accent: 249 76% 58%;
-  --cyan: 194 75% 42%;
-  --punch: 45 100% 54%;
-  --shadow-offset: 245 35% 70%;
-  --panel-border: 245 32% 45%;
+  --text: 238 37% 13%;
+  --muted: 233 12% 37%;
+  --accent: 246 67% 42%;
+  --cyan: 187 80% 30%;
+  --punch: 30 97% 45%;
+  --shadow-offset: 238 36% 22%;
+  --panel-border: 238 35% 18%;
 }
 
 * {
@@ -37,8 +37,8 @@ body {
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
   background-color: hsl(var(--bg));
   background-image:
-    linear-gradient(hsl(var(--accent) / 0.14) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(var(--cyan) / 0.12) 1px, transparent 1px);
+    linear-gradient(hsl(var(--accent) / 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--cyan) / 0.1) 1px, transparent 1px);
   background-size: 36px 36px;
   color: hsl(var(--text));
 }
@@ -51,4 +51,8 @@ body {
   border: 2px solid hsl(var(--panel-border));
   box-shadow: 8px 8px 0 hsl(var(--shadow-offset));
   background: hsl(var(--panel));
+}
+
+:root.light .neo-panel {
+  box-shadow: 10px 10px 0 hsl(var(--shadow-offset));
 }

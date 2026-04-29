@@ -11,6 +11,7 @@ import { decryptBytes, decryptText, encryptBytes, encryptText, getRoomSecret } f
 
 type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; expires_at: string };
+type SystemNotice = { id: string; text: string };
 
 export default function ChatPage() {
   const { code = '' } = useParams();
@@ -23,6 +24,7 @@ export default function ChatPage() {
   const [myRooms, setMyRooms] = useState<Array<{ code: string; expires_at: string }>>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [nameInput, setNameInput] = useState('');
   const [senderName, setSenderName] = useState('');
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
@@ -62,11 +64,16 @@ export default function ChatPage() {
       }
     });
     socket.on('receive-message', (msg) => setMessages((p) => [...p, msg]));
+    socket.on('user-left', (payload: { senderId?: string; senderName?: string }) => {
+      if (payload?.senderId === senderId) return;
+      const name = payload?.senderName ?? 'A user';
+      setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: `${name} left the room` }]);
+    });
     socket.on('room-expired', () => {
       setRoom(null);
       loadMyRooms().catch(() => undefined);
     });
-    return () => { socket.off('receive-message'); socket.off('room-expired'); socket.off('socket-error'); };
+    return () => { socket.off('receive-message'); socket.off('room-expired'); socket.off('socket-error'); socket.off('user-left'); };
   }, [room, socket, senderId, senderName, loadMyRooms, nav]);
 
   const send = () => {
@@ -141,7 +148,7 @@ export default function ChatPage() {
 
   const leaveRoom = async () => {
     if (!room) return;
-    socket.emit('leave-room', { roomCode: room.code, senderId });
+    socket.emit('leave-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
     await api.post(`/rooms/${room.code}/leave`, { senderId });
     await loadMyRooms();
     nav('/');
@@ -209,6 +216,11 @@ export default function ChatPage() {
       </header>
 
       <section className="neo-panel flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
+        {notices.map((n) => (
+          <div key={n.id} className="mx-auto w-fit border-2 border-punch bg-panel px-3 py-1 text-xs uppercase tracking-wider text-muted">
+            {n.text}
+          </div>
+        ))}
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
         {messages.map((m, i) => <article key={m.id ?? i} className={`max-w-[85%] border-2 p-3 text-sm shadow-panel sm:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
           <p className="mb-1 text-[10px] uppercase tracking-wider text-muted">{m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>

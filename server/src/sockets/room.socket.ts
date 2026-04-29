@@ -6,7 +6,7 @@ import { saveMessage } from '../services/message.service.js';
 import { countActiveMembers, isActiveMember, joinMembership, leaveMembership } from '../services/membership.service.js';
 
 const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
-const leaveSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid() });
+const leaveSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
 
 export const registerRoomSocket = (io: Server, socket: Socket) => {
   socket.on('join-room', async (payload) => {
@@ -76,8 +76,10 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
       if (!parsed.success) return;
       const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
       if (!room) return;
+      const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
       socket.leave(room.id);
       await leaveMembership(room.id, parsed.data.senderId);
+      socket.to(room.id).emit('user-left', { senderId: parsed.data.senderId, senderName: effectiveName, roomCode: room.code });
     } catch {
       socket.emit('socket-error', { code: 'LEAVE_FAILED', message: 'Unable to leave room right now.' });
     }

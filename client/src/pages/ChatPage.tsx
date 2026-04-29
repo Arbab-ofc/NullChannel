@@ -7,6 +7,7 @@ import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
 import { useCountdown } from '../hooks/useCountdown';
 import { ThemeToggle } from '../components/common/ThemeToggle';
+import { decryptBytes, decryptText, encryptBytes, encryptText, getRoomSecret } from '../lib/crypto';
 
 type Msg = { id?: string; sender_id: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
 type Room = { id: string; code: string; creator_id: string; expires_at: string };
@@ -21,6 +22,7 @@ export default function ChatPage() {
   const [text, setText] = useState('');
   const [myRooms, setMyRooms] = useState<Array<{ code: string; expires_at: string }>>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -51,7 +53,11 @@ export default function ChatPage() {
 
   const send = () => {
     if (!room || !text.trim()) return;
-    socket.emit('send-message', { roomCode: room.code, senderId, type: 'text', content: text.trim() });
+    const secret = getRoomSecret();
+    if (!secret) return;
+    encryptText(text.trim(), secret).then((enc) => {
+      socket.emit('send-message', { roomCode: room.code, senderId, type: 'text', content: enc });
+    }).catch(() => undefined);
     setText('');
   };
 
@@ -60,10 +66,14 @@ export default function ChatPage() {
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) return;
 
+    const secret = getRoomSecret();
+    if (!secret) return;
     setUploadingImage(true);
     try {
+      const bytes = await file.arrayBuffer();
+      const encrypted = await encryptBytes(bytes, secret);
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', new Blob([encrypted.data], { type: 'application/octet-stream' }), `${file.name}.enc`);
       form.append('roomCode', room.code);
       form.append('type', 'image');
       const res = await api.post('/media/upload', form, {
@@ -74,6 +84,7 @@ export default function ChatPage() {
         roomCode: room.code,
         senderId,
         type: 'image',
+        content: JSON.stringify({ iv: encrypted.iv, mime: file.type }),
         fileUrl: res.data.data.fileUrl,
         filePath: res.data.data.fileId ?? res.data.data.filePath
       });
@@ -81,6 +92,31 @@ export default function ChatPage() {
       setUploadingImage(false);
     }
   };
+
+  useEffect(() => {
+    const secret = getRoomSecret();
+    if (!secret) return;
+    messages.forEach((m, i) => {
+      const key = m.id ?? String(i);
+      if (mediaUrls[key]) return;
+      if ((m.type === 'image' || m.type === 'voice') && m.file_url && m.content?.startsWith('{')) {
+        const meta = JSON.parse(m.content) as { iv: string; mime: string };
+        fetch(m.file_url)
+          .then((r) => r.arrayBuffer())
+          .then((buf) => decryptBytes(buf, meta.iv, secret))
+          .then((plain) => {
+            const url = URL.createObjectURL(new Blob([plain], { type: meta.mime }));
+            setMediaUrls((p) => ({ ...p, [key]: url }));
+          })
+          .catch(() => undefined);
+      }
+      if (m.type === 'text' && m.content?.startsWith('enc:v1:')) {
+        decryptText(m.content, secret).then((plain) => {
+          setMessages((prev) => prev.map((x) => ((x.id ?? '') === (m.id ?? '') ? { ...x, content: plain } : x)));
+        }).catch(() => undefined);
+      }
+    });
+  }, [messages, mediaUrls]);
 
   const leaveRoom = async () => {
     if (!room) return;
@@ -131,8 +167,8 @@ export default function ChatPage() {
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
         {messages.map((m, i) => <article key={m.id ?? i} className={`max-w-[85%] border-2 p-3 text-sm shadow-panel sm:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
           {m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
-          {m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
-          {m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
+          {m.type === 'image' && (mediaUrls[m.id ?? String(i)] ? <img src={mediaUrls[m.id ?? String(i)]} className="max-h-72 w-full object-cover" /> : <p className="text-xs text-muted">Decrypting image...</p>)}
+          {m.type === 'voice' && (mediaUrls[m.id ?? String(i)] ? <audio controls src={mediaUrls[m.id ?? String(i)]} className="w-full" /> : <p className="text-xs text-muted">Decrypting audio...</p>)}
         </article>)}
       </section>
 

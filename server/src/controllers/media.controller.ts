@@ -5,8 +5,8 @@ import { getRoomByCode } from '../services/room.service.js';
 import { LIMITS } from '../constants/limits.js';
 import { errorResponse, successResponse } from '../utils/apiResponse.js';
 
-const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
-const voiceTypes = ['audio/webm', 'audio/mpeg', 'audio/mp3', 'audio/wav'];
+const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream'];
+const voiceTypes = ['audio/webm', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'application/octet-stream'];
 
 export const uploadMediaController = async (req: Request, res: Response) => {
   const parsed = mediaBodySchema.safeParse(req.body);

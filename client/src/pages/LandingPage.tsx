@@ -5,6 +5,7 @@ import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useLocalSender } from '../hooks/useLocalSender';
 import { ThemeToggle } from '../components/common/ThemeToggle';
+import { ensureRoomSecret } from '../lib/crypto';
 
 export default function LandingPage() {
   const nav = useNavigate();
@@ -13,17 +14,18 @@ export default function LandingPage() {
 
   const createChannel = async () => {
     const res = await api.post('/rooms', { senderId });
-    nav(`/chat/${res.data.data.code}`);
+    const secret = ensureRoomSecret();
+    nav(`/chat/${res.data.data.code}#${secret}`);
   };
 
   return <main className="min-h-screen bg-bg px-4 py-6 sm:px-8 sm:py-10">
     <div className="mx-auto max-w-6xl space-y-8">
-      <header className="neo-panel flex items-center justify-between px-5 py-4">
+      <header className="neo-panel flex items-center justify-between gap-4 px-5 py-4">
         <div>
           <p className="code-font text-xs tracking-[0.3em] text-cyan">NULLCHANNEL / PRIVATE RELAY</p>
           <h1 className="mt-1 text-2xl font-bold uppercase tracking-wide">NullChannel</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <ThemeToggle />
           <Button onClick={createChannel}>Create Channel</Button>
         </div>

@@ -1,15 +1,17 @@
-import { Shield, TimerReset, UserCheck, MessageCircle, ArrowRight, Fingerprint } from 'lucide-react';
+import { TimerReset, UserCheck, MessageCircle, ArrowRight, Fingerprint } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
+import { useLocalSender } from '../hooks/useLocalSender';
 
 export default function LandingPage() {
   const nav = useNavigate();
+  const senderId = useLocalSender();
   const [joinCode, setJoinCode] = useState('');
 
   const createChannel = async () => {
-    const res = await api.post('/rooms');
+    const res = await api.post('/rooms', { senderId });
     nav(`/chat/${res.data.data.code}`);
   };
 

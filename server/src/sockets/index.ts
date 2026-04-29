@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { env } from '../config/env.js';
 import { registerRoomSocket } from './room.socket.js';
+import { setSocketServer } from './emitter.js';
 
 export const createSocketServer = (server: HttpServer) => {
   const io = new Server(server, {
@@ -13,5 +14,6 @@ export const createSocketServer = (server: HttpServer) => {
     registerRoomSocket(io, socket);
   });
 
+  setSocketServer(io);
   return io;
 };

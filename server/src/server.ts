@@ -12,7 +12,7 @@ cron.schedule('*/15 * * * *', async () => {
   await cleanupExpiredRooms();
 });
 
-httpServer.on('error', (error: NodeJS.ErrnoException) => {
+httpServer.on('error', (error: Error & { code?: string }) => {
   if (error.code === 'EADDRINUSE') {
     console.error(`Port ${env.PORT} is already in use. Update server/.env PORT and retry.`);
     process.exit(1);

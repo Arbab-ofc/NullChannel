@@ -2,13 +2,24 @@ import { supabase } from '../config/supabase.js';
 import { generateCode } from '../utils/generateCode.js';
 import { cleanupRoomsByIds } from './cleanup.service.js';
 
-const roomSelectWithType = 'id, code, creator_id, room_type, created_at, expires_at';
+const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at';
 
-export const createRoom = async (creatorId: string, roomType: 'private' | 'group') => {
+export const createRoom = async (creatorId: string, roomType: 'private' | 'group', roomName: string) => {
+  const { count, error: countError } = await supabase
+    .from('rooms')
+    .select('*', { count: 'exact', head: true })
+    .eq('creator_id', creatorId)
+    .eq('room_type', roomType)
+    .gt('expires_at', new Date().toISOString());
+  if (countError) throw countError;
+  if ((count ?? 0) >= 3) {
+    throw new Error(`ROOM_LIMIT_REACHED:${roomType}`);
+  }
+
   let lastErrorMessage = 'Failed to create room';
   for (let i = 0; i < 5; i += 1) {
     const code = generateCode();
-    const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId, room_type: roomType }).select(roomSelectWithType).single();
+    const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId, room_type: roomType, room_name: roomName }).select(roomSelectWithType).single();
     if (!error && data) return data;
     if (error?.message) lastErrorMessage = error.message;
   }
@@ -17,6 +28,9 @@ export const createRoom = async (creatorId: string, roomType: 'private' | 'group
   }
   if (lastErrorMessage.includes('room_type')) {
     throw new Error('Database schema is outdated. Run docs/supabase-migration-v4.sql and retry.');
+  }
+  if (lastErrorMessage.includes('room_name')) {
+    throw new Error('Database schema is outdated. Run docs/supabase-migration-v5.sql and retry.');
   }
   throw new Error(lastErrorMessage);
 };

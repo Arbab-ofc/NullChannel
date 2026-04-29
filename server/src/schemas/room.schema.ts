@@ -6,7 +6,8 @@ export const roomCodeSchema = z.object({
 
 export const createRoomSchema = z.object({
   senderId: z.string().uuid(),
-  roomType: z.enum(['private', 'group']).default('private')
+  roomType: z.enum(['private', 'group']).default('private'),
+  roomName: z.string().trim().min(2).max(40)
 });
 
 export const terminateRoomSchema = z.object({

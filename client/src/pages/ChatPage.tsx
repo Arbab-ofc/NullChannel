@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -10,7 +10,7 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { decryptBytes, decryptText, encryptBytes, encryptText, getRoomSecret } from '../lib/crypto';
 
 type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
-type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; expires_at: string };
+type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
 type SystemNotice = { id: string; text: string };
 
 export default function ChatPage() {
@@ -169,7 +169,7 @@ export default function ChatPage() {
     </div>
   </main>;
 
-  return <main className="mx-auto grid min-h-screen w-full max-w-7xl gap-4 bg-bg px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[1fr_300px] lg:px-8 lg:py-8">
+  return <main className="mx-auto grid min-h-screen w-full max-w-7xl gap-3 bg-bg px-2 py-3 sm:gap-4 sm:px-4 sm:py-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8 lg:py-8">
     {room.room_type === 'group' && !senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
@@ -194,11 +194,12 @@ export default function ChatPage() {
         </Button>
       </div>
     </div>}
-    <section className="flex min-h-[70vh] flex-col gap-4 lg:min-h-[82vh]">
-      <header className="neo-panel p-4 sm:p-6">
+    <section className="order-1 flex min-h-[68vh] min-w-0 flex-col gap-3 lg:order-1 lg:min-h-[82vh] lg:gap-4">
+      <header className="neo-panel p-3 sm:p-4 lg:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="code-font text-xs tracking-[0.2em] text-cyan">NULLCHANNEL / SESSION ACTIVE</p>
+            <p className="mt-1 text-sm font-semibold uppercase">{room.room_name}</p>
             <p className="code-font mt-1 text-sm tracking-widest">CHANNEL ID: {room.code}</p>
           </div>
           <div className="text-right">
@@ -206,7 +207,7 @@ export default function ChatPage() {
             <p className="text-lg font-bold text-punch">{left}</p>
           </div>
         </div>
-        <div className="mt-4 hidden flex-wrap gap-2 lg:flex">
+        <div className="mt-4 hidden flex-wrap gap-2 xl:flex">
           <ThemeToggle />
           <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
           <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
@@ -214,35 +215,47 @@ export default function ChatPage() {
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
           <span className="ml-auto inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>
         </div>
-        <div className="mt-4 flex items-center justify-between gap-2 lg:hidden">
+        <div className="mt-4 flex items-center justify-between gap-2 xl:hidden">
           <span className="inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>
           <button
-            className="neo-action inline-flex h-10 w-10 items-center justify-center border-2 border-accent bg-panel"
+            className="neo-action inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-accent bg-panel"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="Toggle chat menu"
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
-        {menuOpen && (
-          <div className="mt-3 grid gap-2 lg:hidden">
-            <ThemeToggle />
-            <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
-            <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
-            <Button onClick={leaveRoom}><DoorOpen className="mr-2 inline h-4 w-4" />Leave Room</Button>
-            {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
-          </div>
-        )}
+        <>
+          <button
+            className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-250 xl:hidden ${menuOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+            onClick={() => setMenuOpen(false)}
+            aria-label="Close menu"
+          />
+          <aside className={`fixed right-0 top-0 z-50 h-full w-[88%] max-w-sm border-l-2 border-accent bg-panel p-4 shadow-panel transition-transform duration-300 ease-out xl:hidden ${menuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className="mb-4 flex items-center justify-between">
+              <p className="code-font text-xs tracking-[0.2em] text-cyan">CHANNEL CONTROLS</p>
+              <button className="neo-action inline-flex h-10 w-10 items-center justify-center border-2 border-accent bg-panel" onClick={() => setMenuOpen(false)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="grid gap-2">
+              <ThemeToggle />
+              <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
+              <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
+              <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
+              <Button onClick={leaveRoom}><DoorOpen className="mr-2 inline h-4 w-4" />Leave Room</Button>
+              {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
+            </div>
+          </aside>
+        </>
       </header>
 
-      <section className="neo-panel flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
+      <section className="neo-panel flex-1 space-y-3 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {notices.map((n) => (
           <div key={n.id} className="mx-auto w-fit border-2 border-punch bg-panel px-3 py-1 text-xs uppercase tracking-wider text-muted">
             {n.text}
           </div>
         ))}
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
-        {messages.map((m, i) => <article key={m.id ?? i} className={`max-w-[85%] border-2 p-3 text-sm shadow-panel sm:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
+        {messages.map((m, i) => <article key={m.id ?? i} className={`max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
           <p className="mb-1 text-[10px] uppercase tracking-wider text-muted">{m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
           {m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
           {m.type === 'image' && (mediaUrls[m.id ?? String(i)] ? <img src={mediaUrls[m.id ?? String(i)]} className="max-h-72 w-full object-cover" /> : <p className="text-xs text-muted">Decrypting image...</p>)}
@@ -250,12 +263,12 @@ export default function ChatPage() {
         </article>)}
       </section>
 
-    <footer className="neo-panel p-3">
-      <div className="flex flex-col gap-2 md:flex-row">
+    <footer className="neo-panel sticky bottom-0 z-10 p-2.5 sm:p-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            className="min-h-12 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan"
+            className="min-h-11 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan"
             placeholder="Type a transmission"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -264,7 +277,7 @@ export default function ChatPage() {
               }
             }}
           />
-        <label className="neo-action inline-flex h-12 cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text shadow-panel">
+        <label className="neo-action inline-flex h-11 w-full cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text shadow-panel md:w-auto">
           <ImagePlus className="mr-2 h-4 w-4" />
           {uploadingImage ? 'Uploading' : 'Image'}
           <input
@@ -279,17 +292,17 @@ export default function ChatPage() {
             }}
           />
         </label>
-        <Button className="h-12 w-full md:w-40" onClick={send}>Send</Button>
+        <Button className="h-11 w-full md:w-40" onClick={send}>Send</Button>
       </div>
     </footer>
     </section>
 
-    <aside className="neo-panel h-fit p-4">
+    <aside className="neo-panel order-2 h-fit min-w-0 p-3 sm:p-4 lg:order-2">
       <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Rows2 className="h-4 w-4" />ACTIVE ROOMS</p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1">
         {myRooms.length === 0 && <p className="text-sm text-muted">You are not active in any room.</p>}
         {myRooms.map((r) => (
-          <button key={r.code} onClick={() => nav(`/chat/${r.code}`)} className={`neo-action w-full border-2 px-3 py-2 text-left text-sm ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>
+          <button key={r.code} onClick={() => nav(`/chat/${r.code}`)} className={`neo-action w-[220px] shrink-0 border-2 px-3 py-2 text-left text-sm sm:w-full ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>
             <p className="code-font tracking-widest">{r.code}</p>
             <p className="text-xs text-muted">Expires: {new Date(r.expires_at).toLocaleString()}</p>
           </button>

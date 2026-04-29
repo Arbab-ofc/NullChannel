@@ -9,11 +9,20 @@ import { emitRoomExpired } from '../sockets/emitter.js';
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId, roomType and roomName are required.'));
     return;
   }
-  const room = await createRoom(parsed.data.senderId, parsed.data.roomType);
-  res.status(201).json(successResponse(room));
+  try {
+    const room = await createRoom(parsed.data.senderId, parsed.data.roomType, parsed.data.roomName);
+    res.status(201).json(successResponse(room));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('ROOM_LIMIT_REACHED:')) {
+      const roomType = error.message.split(':')[1];
+      res.status(429).json(errorResponse('ROOM_LIMIT_REACHED', `You can create up to 3 active ${roomType} rooms.`));
+      return;
+    }
+    throw error;
+  }
 };
 
 export const getRoomController = async (req: Request, res: Response) => {

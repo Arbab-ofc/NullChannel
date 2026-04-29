@@ -5,6 +5,7 @@ create table if not exists rooms (
   code varchar(8) unique not null,
   creator_id text not null,
   room_type text not null default 'private' check (room_type in ('private', 'group')),
+  room_name text not null,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '24 hours')
 );

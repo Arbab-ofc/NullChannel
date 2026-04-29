@@ -53,6 +53,21 @@ body {
   background: hsl(var(--panel));
 }
 
+.neo-action {
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  will-change: transform;
+}
+
+.neo-action:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+}
+
+.neo-action:active {
+  transform: translate(4px, 4px);
+  box-shadow: 4px 4px 0 hsl(var(--shadow-offset));
+}
+
 :root.light .neo-panel {
   box-shadow: 12px 12px 0 hsl(var(--shadow-offset));
 }

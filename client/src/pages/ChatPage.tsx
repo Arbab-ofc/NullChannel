@@ -150,7 +150,7 @@ export default function ChatPage() {
               }
             }}
           />
-        <label className="inline-flex h-12 cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text shadow-panel hover:-translate-y-0.5 hover:translate-x-0.5 hover:shadow-punch">
+        <label className="neo-action inline-flex h-12 cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text shadow-panel">
           <ImagePlus className="mr-2 h-4 w-4" />
           {uploadingImage ? 'Uploading' : 'Image'}
           <input
@@ -175,7 +175,7 @@ export default function ChatPage() {
       <div className="mt-3 space-y-2">
         {myRooms.length === 0 && <p className="text-sm text-muted">You are not active in any room.</p>}
         {myRooms.map((r) => (
-          <button key={r.code} onClick={() => nav(`/chat/${r.code}`)} className={`w-full border-2 px-3 py-2 text-left text-sm ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>
+          <button key={r.code} onClick={() => nav(`/chat/${r.code}`)} className={`neo-action w-full border-2 px-3 py-2 text-left text-sm ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>
             <p className="code-font tracking-widest">{r.code}</p>
             <p className="text-xs text-muted">Expires: {new Date(r.expires_at).toLocaleString()}</p>
           </button>

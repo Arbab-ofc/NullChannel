@@ -5,7 +5,7 @@ import { getRoomByCode } from '../services/room.service.js';
 import { saveMessage } from '../services/message.service.js';
 import { joinMembership, leaveMembership } from '../services/membership.service.js';
 
-const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24) });
+const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
 const leaveSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid() });
 
 export const registerRoomSocket = (io: Server, socket: Socket) => {
@@ -15,9 +15,13 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
 
     const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
     if (!room) return socket.emit('socket-error', { code: 'ROOM_NOT_FOUND', message: 'Channel not found or expired.' });
+    if (room.room_type === 'group' && !parsed.data.senderName) {
+      return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
+    }
+    const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
 
     socket.join(room.id);
-    await joinMembership(room.id, parsed.data.senderId, parsed.data.senderName);
+    await joinMembership(room.id, parsed.data.senderId, effectiveName);
     socket.emit('room-joined', room);
   });
 
@@ -27,11 +31,15 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
 
     const room = await getRoomByCode(parsed.data.roomCode);
     if (!room) return socket.emit('room-expired', { message: 'Channel terminated.' });
+    if (room.room_type === 'group' && !parsed.data.senderName) {
+      return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
+    }
+    const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
 
     const message = await saveMessage(room.id, {
       roomCode: parsed.data.roomCode,
       senderId: parsed.data.senderId,
-      senderName: parsed.data.senderName,
+      senderName: effectiveName,
       type: parsed.data.type,
       content: parsed.data.content,
       fileUrl: parsed.data.fileUrl,

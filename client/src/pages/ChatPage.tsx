@@ -10,7 +10,7 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { decryptBytes, decryptText, encryptBytes, encryptText, getRoomSecret } from '../lib/crypto';
 
 type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
-type Room = { id: string; code: string; creator_id: string; expires_at: string };
+type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; expires_at: string };
 
 export default function ChatPage() {
   const { code = '' } = useParams();
@@ -43,8 +43,9 @@ export default function ChatPage() {
   }, [code, loadMyRooms]);
 
   useEffect(() => {
-    if (!room || !senderName) return;
-    socket.emit('join-room', { roomCode: room.code, senderId, senderName });
+    if (!room) return;
+    if (room.room_type === 'group' && !senderName) return;
+    socket.emit('join-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
     socket.on('receive-message', (msg) => setMessages((p) => [...p, msg]));
     socket.on('room-expired', () => {
       setRoom(null);
@@ -54,17 +55,19 @@ export default function ChatPage() {
   }, [room, socket, senderId, senderName, loadMyRooms]);
 
   const send = () => {
-    if (!room || !text.trim() || !senderName) return;
+    if (!room || !text.trim()) return;
+    if (room.room_type === 'group' && !senderName) return;
     const secret = getRoomSecret();
     if (!secret) return;
     encryptText(text.trim(), secret).then((enc) => {
-      socket.emit('send-message', { roomCode: room.code, senderId, senderName, type: 'text', content: enc });
+      socket.emit('send-message', { roomCode: room.code, senderId, senderName: senderName || undefined, type: 'text', content: enc });
     }).catch(() => undefined);
     setText('');
   };
 
   const sendImage = async (file: File) => {
-    if (!room || !senderName) return;
+    if (!room) return;
+    if (room.room_type === 'group' && !senderName) return;
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) return;
 
@@ -85,7 +88,7 @@ export default function ChatPage() {
       socket.emit('send-message', {
         roomCode: room.code,
         senderId,
-        senderName,
+        senderName: senderName || undefined,
         type: 'image',
         content: JSON.stringify({ iv: encrypted.iv, mime: file.type }),
         fileUrl: res.data.data.fileUrl,
@@ -144,7 +147,7 @@ export default function ChatPage() {
   </main>;
 
   return <main className="mx-auto grid min-h-screen w-full max-w-6xl gap-4 bg-bg px-4 py-5 sm:grid-cols-[1fr_280px] sm:px-8 sm:py-8">
-    {!senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+    {room.room_type === 'group' && !senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
         <h3 className="mt-2 text-xl font-bold uppercase">Name required to join room chat</h3>

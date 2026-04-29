@@ -4,6 +4,7 @@ create table if not exists rooms (
   id uuid primary key default gen_random_uuid(),
   code varchar(8) unique not null,
   creator_id text not null,
+  room_type text not null default 'private' check (room_type in ('private', 'group')),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '24 hours')
 );

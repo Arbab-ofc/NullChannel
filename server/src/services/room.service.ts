@@ -2,13 +2,13 @@ import { supabase } from '../config/supabase.js';
 import { generateCode } from '../utils/generateCode.js';
 import { cleanupRoomsByIds } from './cleanup.service.js';
 
-const roomSelect = 'id, code, creator_id, created_at, expires_at';
+const roomSelectWithType = 'id, code, creator_id, room_type, created_at, expires_at';
 
-export const createRoom = async (creatorId: string) => {
+export const createRoom = async (creatorId: string, roomType: 'private' | 'group') => {
   let lastErrorMessage = 'Failed to create room';
   for (let i = 0; i < 5; i += 1) {
     const code = generateCode();
-    const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId }).select(roomSelect).single();
+    const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId, room_type: roomType }).select(roomSelectWithType).single();
     if (!error && data) return data;
     if (error?.message) lastErrorMessage = error.message;
   }
@@ -21,7 +21,7 @@ export const createRoom = async (creatorId: string) => {
 export const getRoomByCode = async (code: string) => {
   const { data } = await supabase
     .from('rooms')
-    .select(roomSelect)
+    .select(roomSelectWithType)
     .eq('code', code)
     .gt('expires_at', new Date().toISOString())
     .maybeSingle();

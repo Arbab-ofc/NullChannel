@@ -12,8 +12,8 @@ export default function LandingPage() {
   const senderId = useLocalSender();
   const [joinCode, setJoinCode] = useState('');
 
-  const createChannel = async () => {
-    const res = await api.post('/rooms', { senderId });
+  const createChannel = async (roomType: 'private' | 'group') => {
+    const res = await api.post('/rooms', { senderId, roomType });
     const secret = ensureRoomSecret();
     nav(`/chat/${res.data.data.code}#${secret}`);
   };
@@ -27,7 +27,8 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-4">
           <ThemeToggle />
-          <Button onClick={createChannel}>Create Channel</Button>
+          <Button onClick={() => createChannel('private')}>Create Private</Button>
+          <Button onClick={() => createChannel('group')}>Create Group</Button>
         </div>
       </header>
 
@@ -44,7 +45,7 @@ export default function LandingPage() {
             className="h-12 w-full rounded-none border-2 border-accent bg-bg px-4 text-sm font-semibold tracking-widest text-text outline-none placeholder:text-muted focus:border-cyan"
           />
           <Button className="h-12" onClick={() => nav(`/chat/${joinCode}`)}>Join Channel</Button>
-          <Button className="h-12 bg-accent text-bg" onClick={createChannel}>Create Channel</Button>
+          <Button className="h-12 bg-accent text-bg" onClick={() => createChannel('private')}>Create Private</Button>
         </div>
         <div className="mt-6 flex flex-wrap gap-3 text-xs uppercase tracking-wider text-muted">
           <span className="border border-cyan px-3 py-1">No signup</span>
@@ -70,10 +71,10 @@ export default function LandingPage() {
       <section className="neo-panel grid gap-4 p-6 sm:grid-cols-2">
         <div>
           <p className="code-font text-xs tracking-[0.2em] text-cyan">PRIVACY NOTE</p>
-          <p className="mt-2 text-sm text-muted">MVP is not fully end-to-end encrypted. HTTPS protects transport in production. Messages and media are scheduled for automatic deletion after room expiry.</p>
+          <p className="mt-2 text-sm text-muted">No signup, temporary channels, and automatic data expiry.</p>
         </div>
         <div className="flex items-end justify-start sm:justify-end">
-          <Button onClick={createChannel}>Start Transmission <ArrowRight className="ml-2 inline h-4 w-4" /></Button>
+          <Button onClick={() => createChannel('private')}>Start Transmission <ArrowRight className="ml-2 inline h-4 w-4" /></Button>
         </div>
       </section>
     </div>

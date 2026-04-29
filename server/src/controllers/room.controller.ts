@@ -12,7 +12,7 @@ export const createRoomController = async (req: Request, res: Response) => {
     res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));
     return;
   }
-  const room = await createRoom(parsed.data.senderId);
+  const room = await createRoom(parsed.data.senderId, parsed.data.roomType);
   res.status(201).json(successResponse(room));
 };
 

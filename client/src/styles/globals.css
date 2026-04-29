@@ -17,15 +17,15 @@
 }
 
 :root.light {
-  --bg: 35 100% 96%;
-  --panel: 36 100% 99%;
-  --text: 221 39% 11%;
-  --muted: 222 16% 35%;
-  --accent: 222 84% 43%;
-  --cyan: 172 90% 28%;
-  --punch: 11 90% 52%;
-  --shadow-offset: 221 39% 11%;
-  --panel-border: 221 39% 11%;
+  --bg: 60 33% 97%;
+  --panel: 0 0% 100%;
+  --text: 240 10% 8%;
+  --muted: 240 6% 32%;
+  --accent: 345 84% 43%;
+  --cyan: 210 90% 42%;
+  --punch: 46 100% 46%;
+  --shadow-offset: 240 10% 8%;
+  --panel-border: 240 10% 8%;
 }
 
 * {
@@ -59,9 +59,9 @@ body {
 
 :root.light body {
   background-image:
-    linear-gradient(hsl(var(--text) / 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(var(--text) / 0.08) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(hsl(var(--accent) / 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--cyan) / 0.12) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
 :root.light button {

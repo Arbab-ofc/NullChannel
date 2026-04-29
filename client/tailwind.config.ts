@@ -5,15 +5,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: '#05050A',
-        panel: '#0D0B18',
-        text: '#EDE9FE',
-        muted: '#9CA3AF',
-        accent: '#7C3AED',
-        cyan: '#22D3EE'
+        bg: '#07070F',
+        panel: '#121226',
+        text: '#F4F3FF',
+        muted: '#A7A9BE',
+        accent: '#8B5CF6',
+        cyan: '#3DD9EB',
+        punch: '#FFE45E'
       },
       boxShadow: {
-        panel: '6px 6px 0px rgba(34,211,238,0.14)'
+        panel: '8px 8px 0px #2B2F55',
+        punch: '8px 8px 0px #FFE45E'
       }
     }
   },

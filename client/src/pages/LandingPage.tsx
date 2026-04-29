@@ -1,4 +1,4 @@
-import { Shield, TimerReset, UserCheck, MessageCircle } from 'lucide-react';
+import { Shield, TimerReset, UserCheck, MessageCircle, ArrowRight, Fingerprint } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Button } from '../components/common/Button';
@@ -13,35 +13,61 @@ export default function LandingPage() {
     nav(`/chat/${res.data.data.code}`);
   };
 
-  return <main className="min-h-screen bg-bg px-6 py-10">
-    <div className="mx-auto max-w-5xl space-y-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-wide">NULLCHANNEL</h1>
+  return <main className="min-h-screen bg-bg px-4 py-6 sm:px-8 sm:py-10">
+    <div className="mx-auto max-w-6xl space-y-8">
+      <header className="neo-panel flex items-center justify-between px-5 py-4">
+        <div>
+          <p className="code-font text-xs tracking-[0.3em] text-cyan">NULLCHANNEL / PRIVATE RELAY</p>
+          <h1 className="mt-1 text-2xl font-bold uppercase tracking-wide">NullChannel</h1>
+        </div>
         <Button onClick={createChannel}>Create Channel</Button>
       </header>
-      <section className="rounded-xl border border-violet-500/40 bg-panel p-8 shadow-panel">
-        <h2 className="text-4xl font-semibold">Private channels that disappear.</h2>
-        <p className="mt-3 max-w-2xl text-muted">Create a temporary channel, share the code, and chat in real time. No account required. Everything expires after 24 hours.</p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Button onClick={createChannel}>Create Channel</Button>
-          <input value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="ENTER 8-CHAR CODE" className="rounded-md border border-violet-500/40 bg-bg px-3 py-2 text-sm" />
-          <Button onClick={() => nav(`/chat/${joinCode}`)}>Join Channel</Button>
+
+      <section className="neo-panel relative overflow-hidden p-6 sm:p-10">
+        <div className="absolute -right-8 -top-8 h-28 w-28 border-2 border-punch bg-accent/20" />
+        <p className="code-font text-xs tracking-[0.25em] text-cyan">UNAUTHENTICATED. TEMPORARY. LIVE.</p>
+        <h2 className="mt-3 max-w-3xl text-4xl font-black uppercase leading-tight sm:text-6xl">Private channels that disappear.</h2>
+        <p className="mt-4 max-w-3xl text-base text-muted sm:text-lg">Create a temporary channel, share the code, and chat in real time. No account required. Everything expires after 24 hours.</p>
+        <div className="mt-8 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+          <input
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            placeholder="ENTER 8-CHAR CODE"
+            className="h-12 w-full rounded-none border-2 border-accent bg-bg px-4 text-sm font-semibold tracking-widest text-text outline-none placeholder:text-muted focus:border-cyan"
+          />
+          <Button className="h-12" onClick={() => nav(`/chat/${joinCode}`)}>Join Channel</Button>
+          <Button className="h-12 bg-accent text-bg" onClick={createChannel}>Create Channel</Button>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3 text-xs uppercase tracking-wider text-muted">
+          <span className="border border-cyan px-3 py-1">No signup</span>
+          <span className="border border-cyan px-3 py-1">24-hour expiry</span>
+          <span className="border border-cyan px-3 py-1">Real-time transport</span>
         </div>
       </section>
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: 'No signup', Icon: UserCheck },
-          { label: '24-hour expiry', Icon: TimerReset },
-          { label: 'Private channel', Icon: Shield },
-          { label: 'Real-time', Icon: MessageCircle }
+          { label: 'No account required', Icon: UserCheck },
+          { label: 'Automatic room expiry', Icon: TimerReset },
+          { label: 'Confidential channel IDs', Icon: Fingerprint },
+          { label: 'Low-latency relay', Icon: MessageCircle }
         ].map(({ label, Icon }) => (
-          <div key={String(label)} className="rounded-lg border border-violet-500/30 bg-panel p-4">
-            <Icon className="mb-2 h-4 w-4 text-cyan" />
-            <p className="text-sm">{label}</p>
-          </div>
+          <article key={label} className="neo-panel p-4">
+            <Icon className="h-5 w-5 text-punch" />
+            <p className="mt-3 font-semibold uppercase">{label}</p>
+          </article>
         ))}
       </section>
-      <p className="text-xs text-muted">MVP note: not fully end-to-end encrypted yet. HTTPS protects traffic in production.</p>
+
+      <section className="neo-panel grid gap-4 p-6 sm:grid-cols-2">
+        <div>
+          <p className="code-font text-xs tracking-[0.2em] text-cyan">PRIVACY NOTE</p>
+          <p className="mt-2 text-sm text-muted">MVP is not fully end-to-end encrypted. HTTPS protects transport in production. Messages and media are scheduled for automatic deletion after room expiry.</p>
+        </div>
+        <div className="flex items-end justify-start sm:justify-end">
+          <Button onClick={createChannel}>Start Transmission <ArrowRight className="ml-2 inline h-4 w-4" /></Button>
+        </div>
+      </section>
     </div>
   </main>;
 }

@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
 import { useCountdown } from '../hooks/useCountdown';
+import { ThemeToggle } from '../components/common/ThemeToggle';
 
 type Msg = { id?: string; sender_id: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
 type Room = { id: string; code: string; creator_id: string; expires_at: string };
@@ -117,6 +118,7 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
+          <ThemeToggle />
           <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
           <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
           <Button onClick={leaveRoom}><DoorOpen className="mr-2 inline h-4 w-4" />Leave Room</Button>

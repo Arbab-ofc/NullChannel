@@ -2,8 +2,11 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import ChatPage from './pages/ChatPage';
 import NotFoundPage from './pages/NotFoundPage';
+import { useTheme } from './hooks/useTheme';
 
 export default function App() {
+  useTheme();
+
   return <Routes>
     <Route path="/" element={<LandingPage />} />
     <Route path="/chat/:code" element={<ChatPage />} />

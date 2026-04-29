@@ -3,8 +3,29 @@
 @tailwind utilities;
 
 :root {
-  color: #f4f3ff;
-  background: #07070f;
+  --bg: 240 36% 5%;
+  --panel: 240 34% 11%;
+  --text: 250 100% 98%;
+  --muted: 229 15% 70%;
+  --accent: 258 90% 67%;
+  --cyan: 186 81% 58%;
+  --punch: 50 100% 67%;
+  --shadow-offset: 232 33% 25%;
+  --panel-border: 232 31% 34%;
+  color: hsl(var(--text));
+  background: hsl(var(--bg));
+}
+
+:root.light {
+  --bg: 48 43% 95%;
+  --panel: 0 0% 100%;
+  --text: 244 33% 16%;
+  --muted: 238 14% 42%;
+  --accent: 249 76% 58%;
+  --cyan: 194 75% 42%;
+  --punch: 45 100% 54%;
+  --shadow-offset: 245 35% 70%;
+  --panel-border: 245 32% 45%;
 }
 
 * {
@@ -14,12 +35,12 @@
 body {
   margin: 0;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
-  background-color: #07070f;
+  background-color: hsl(var(--bg));
   background-image:
-    linear-gradient(rgba(139, 92, 246, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(61, 217, 235, 0.06) 1px, transparent 1px);
+    linear-gradient(hsl(var(--accent) / 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--cyan) / 0.12) 1px, transparent 1px);
   background-size: 36px 36px;
-  color: #f4f3ff;
+  color: hsl(var(--text));
 }
 
 .code-font {
@@ -27,7 +48,7 @@ body {
 }
 
 .neo-panel {
-  border: 2px solid #3b3f6f;
-  box-shadow: 8px 8px 0 #2b2f55;
-  background: #121226;
+  border: 2px solid hsl(var(--panel-border));
+  box-shadow: 8px 8px 0 hsl(var(--shadow-offset));
+  background: hsl(var(--panel));
 }

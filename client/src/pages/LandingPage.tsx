@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useLocalSender } from '../hooks/useLocalSender';
+import { ThemeToggle } from '../components/common/ThemeToggle';
 
 export default function LandingPage() {
   const nav = useNavigate();
@@ -22,7 +23,10 @@ export default function LandingPage() {
           <p className="code-font text-xs tracking-[0.3em] text-cyan">NULLCHANNEL / PRIVATE RELAY</p>
           <h1 className="mt-1 text-2xl font-bold uppercase tracking-wide">NullChannel</h1>
         </div>
-        <Button onClick={createChannel}>Create Channel</Button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Button onClick={createChannel}>Create Channel</Button>
+        </div>
       </header>
 
       <section className="neo-panel relative overflow-hidden p-6 sm:p-10">

@@ -5,17 +5,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: '#07070F',
-        panel: '#121226',
-        text: '#F4F3FF',
-        muted: '#A7A9BE',
-        accent: '#8B5CF6',
-        cyan: '#3DD9EB',
-        punch: '#FFE45E'
+        bg: 'hsl(var(--bg) / <alpha-value>)',
+        panel: 'hsl(var(--panel) / <alpha-value>)',
+        text: 'hsl(var(--text) / <alpha-value>)',
+        muted: 'hsl(var(--muted) / <alpha-value>)',
+        accent: 'hsl(var(--accent) / <alpha-value>)',
+        cyan: 'hsl(var(--cyan) / <alpha-value>)',
+        punch: 'hsl(var(--punch) / <alpha-value>)'
       },
       boxShadow: {
-        panel: '8px 8px 0px #2B2F55',
-        punch: '8px 8px 0px #FFE45E'
+        panel: '8px 8px 0px hsl(var(--shadow-offset))',
+        punch: '8px 8px 0px hsl(var(--punch))'
       }
     }
   },

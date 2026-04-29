@@ -4,12 +4,17 @@ import { generateCode } from '../utils/generateCode.js';
 const roomSelect = 'id, code, creator_id, created_at, expires_at';
 
 export const createRoom = async (creatorId: string) => {
+  let lastErrorMessage = 'Failed to create room';
   for (let i = 0; i < 5; i += 1) {
     const code = generateCode();
     const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId }).select(roomSelect).single();
     if (!error && data) return data;
+    if (error?.message) lastErrorMessage = error.message;
   }
-  throw new Error('Failed to create room');
+  if (lastErrorMessage.includes('creator_id')) {
+    throw new Error('Database schema is outdated. Run docs/supabase-migration-v2.sql and retry.');
+  }
+  throw new Error(lastErrorMessage);
 };
 
 export const getRoomByCode = async (code: string) => {

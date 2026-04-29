@@ -37,3 +37,25 @@ export const getParticipantsForRoom = async (roomId: string) => {
   if (error) throw error;
   return data ?? [];
 };
+
+export const countActiveMembers = async (roomId: string) => {
+  const { count, error } = await supabase
+    .from('room_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('room_id', roomId)
+    .is('left_at', null);
+  if (error) throw error;
+  return count ?? 0;
+};
+
+export const isActiveMember = async (roomId: string, senderId: string) => {
+  const { data, error } = await supabase
+    .from('room_members')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('sender_id', senderId)
+    .is('left_at', null)
+    .maybeSingle();
+  if (error) throw error;
+  return !!data;
+};

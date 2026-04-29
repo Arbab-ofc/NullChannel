@@ -3,50 +3,67 @@ import { z } from 'zod';
 import { socketMessageSchema } from '../schemas/message.schema.js';
 import { getRoomByCode } from '../services/room.service.js';
 import { saveMessage } from '../services/message.service.js';
-import { joinMembership, leaveMembership } from '../services/membership.service.js';
+import { countActiveMembers, isActiveMember, joinMembership, leaveMembership } from '../services/membership.service.js';
 
 const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
 const leaveSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid() });
 
 export const registerRoomSocket = (io: Server, socket: Socket) => {
   socket.on('join-room', async (payload) => {
-    const parsed = joinSchema.safeParse(payload);
-    if (!parsed.success) return socket.emit('socket-error', { code: 'VALIDATION_ERROR', message: 'Invalid join payload.' });
+    try {
+      const parsed = joinSchema.safeParse(payload);
+      if (!parsed.success) return socket.emit('socket-error', { code: 'VALIDATION_ERROR', message: 'Invalid join payload.' });
 
-    const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
-    if (!room) return socket.emit('socket-error', { code: 'ROOM_NOT_FOUND', message: 'Channel not found or expired.' });
-    if (room.room_type === 'group' && !parsed.data.senderName) {
-      return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
+      const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
+      if (!room) return socket.emit('socket-error', { code: 'ROOM_NOT_FOUND', message: 'Channel not found or expired.' });
+      if (room.room_type === 'group' && !parsed.data.senderName) {
+        return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
+      }
+      if (room.room_type === 'private') {
+        const alreadyActive = await isActiveMember(room.id, parsed.data.senderId);
+        if (!alreadyActive) {
+          const activeCount = await countActiveMembers(room.id);
+          if (activeCount >= 2) {
+            return socket.emit('socket-error', { code: 'ROOM_FULL', message: 'Private channel allows only 2 active users.' });
+          }
+        }
+      }
+      const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
+
+      socket.join(room.id);
+      await joinMembership(room.id, parsed.data.senderId, effectiveName);
+      socket.emit('room-joined', room);
+    } catch {
+      socket.emit('socket-error', { code: 'SOCKET_JOIN_FAILED', message: 'Unable to join room right now.' });
     }
-    const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
-
-    socket.join(room.id);
-    await joinMembership(room.id, parsed.data.senderId, effectiveName);
-    socket.emit('room-joined', room);
   });
 
   socket.on('send-message', async (payload) => {
-    const parsed = socketMessageSchema.safeParse(payload);
-    if (!parsed.success) return socket.emit('socket-error', { code: 'VALIDATION_ERROR', message: 'Invalid message payload.' });
+    try {
+      const parsed = socketMessageSchema.safeParse(payload);
+      if (!parsed.success) return socket.emit('socket-error', { code: 'VALIDATION_ERROR', message: 'Invalid message payload.' });
 
-    const room = await getRoomByCode(parsed.data.roomCode);
-    if (!room) return socket.emit('room-expired', { message: 'Channel terminated.' });
-    if (room.room_type === 'group' && !parsed.data.senderName) {
-      return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
+      const room = await getRoomByCode(parsed.data.roomCode);
+      if (!room) return socket.emit('room-expired', { message: 'Channel terminated.' });
+      if (room.room_type === 'group' && !parsed.data.senderName) {
+        return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
+      }
+      const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
+
+      const message = await saveMessage(room.id, {
+        roomCode: parsed.data.roomCode,
+        senderId: parsed.data.senderId,
+        senderName: effectiveName,
+        type: parsed.data.type,
+        content: parsed.data.content,
+        fileUrl: parsed.data.fileUrl,
+        filePath: parsed.data.filePath
+      });
+
+      io.to(room.id).emit('receive-message', message);
+    } catch {
+      socket.emit('socket-error', { code: 'SEND_FAILED', message: 'Message send failed.' });
     }
-    const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
-
-    const message = await saveMessage(room.id, {
-      roomCode: parsed.data.roomCode,
-      senderId: parsed.data.senderId,
-      senderName: effectiveName,
-      type: parsed.data.type,
-      content: parsed.data.content,
-      fileUrl: parsed.data.fileUrl,
-      filePath: parsed.data.filePath
-    });
-
-    io.to(room.id).emit('receive-message', message);
   });
 
   socket.on('typing', ({ roomCode, senderId }) => {
@@ -54,11 +71,15 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
   });
 
   socket.on('leave-room', async (payload) => {
-    const parsed = leaveSchema.safeParse(payload);
-    if (!parsed.success) return;
-    const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
-    if (!room) return;
-    socket.leave(room.id);
-    await leaveMembership(room.id, parsed.data.senderId);
+    try {
+      const parsed = leaveSchema.safeParse(payload);
+      if (!parsed.success) return;
+      const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
+      if (!room) return;
+      socket.leave(room.id);
+      await leaveMembership(room.id, parsed.data.senderId);
+    } catch {
+      socket.emit('socket-error', { code: 'LEAVE_FAILED', message: 'Unable to leave room right now.' });
+    }
   });
 };

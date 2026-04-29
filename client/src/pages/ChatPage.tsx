@@ -24,7 +24,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [nameInput, setNameInput] = useState('');
-  const [senderName, setSenderName] = useState(() => localStorage.getItem('nullchannel_sender_name') ?? '');
+  const [senderName, setSenderName] = useState('');
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -35,7 +35,16 @@ export default function ChatPage() {
   useEffect(() => {
     (async () => {
       const roomRes = await api.get(`/rooms/${code.toUpperCase()}`);
-      setRoom(roomRes.data.data);
+      const roomData = roomRes.data.data as Room;
+      setRoom(roomData);
+      if (roomData.room_type === 'group') {
+        const cached = sessionStorage.getItem(`nullchannel_group_name_${roomData.code}`) ?? '';
+        setSenderName(cached);
+        setNameInput(cached);
+      } else {
+        setSenderName('');
+        setNameInput('');
+      }
       const msgRes = await api.get(`/rooms/${code.toUpperCase()}/messages`);
       setMessages(msgRes.data.data);
       await loadMyRooms();
@@ -46,13 +55,19 @@ export default function ChatPage() {
     if (!room) return;
     if (room.room_type === 'group' && !senderName) return;
     socket.emit('join-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
+    socket.on('socket-error', (payload: { code?: string; message?: string }) => {
+      if (payload?.code === 'ROOM_FULL') {
+        alert('Private channel is full (max 2 users).');
+        nav('/');
+      }
+    });
     socket.on('receive-message', (msg) => setMessages((p) => [...p, msg]));
     socket.on('room-expired', () => {
       setRoom(null);
       loadMyRooms().catch(() => undefined);
     });
-    return () => { socket.off('receive-message'); socket.off('room-expired'); };
-  }, [room, socket, senderId, senderName, loadMyRooms]);
+    return () => { socket.off('receive-message'); socket.off('room-expired'); socket.off('socket-error'); };
+  }, [room, socket, senderId, senderName, loadMyRooms, nav]);
 
   const send = () => {
     if (!room || !text.trim()) return;
@@ -163,7 +178,7 @@ export default function ChatPage() {
           onClick={() => {
             const value = nameInput.trim();
             if (value.length < 2) return;
-            localStorage.setItem('nullchannel_sender_name', value);
+            sessionStorage.setItem(`nullchannel_group_name_${room.code}`, value);
             setSenderName(value);
           }}
         >

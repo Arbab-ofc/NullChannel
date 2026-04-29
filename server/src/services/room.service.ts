@@ -15,6 +15,9 @@ export const createRoom = async (creatorId: string, roomType: 'private' | 'group
   if (lastErrorMessage.includes('creator_id')) {
     throw new Error('Database schema is outdated. Run docs/supabase-migration-v2.sql and retry.');
   }
+  if (lastErrorMessage.includes('room_type')) {
+    throw new Error('Database schema is outdated. Run docs/supabase-migration-v4.sql and retry.');
+  }
   throw new Error(lastErrorMessage);
 };
 

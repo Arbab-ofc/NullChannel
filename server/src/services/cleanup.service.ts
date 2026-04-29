@@ -1,12 +1,9 @@
 import { supabase } from '../config/supabase.js';
 import { deleteMediaByFileId } from './media.service.js';
 
-export const cleanupExpiredRooms = async () => {
-  const now = new Date().toISOString();
-  const { data: rooms, error } = await supabase.from('rooms').select('id').lte('expires_at', now);
-  if (error || !rooms?.length) return { removedRooms: 0 };
+export const cleanupRoomsByIds = async (roomIds: string[]) => {
+  if (!roomIds.length) return { removedRooms: 0 };
 
-  const roomIds = rooms.map((r) => r.id);
   const { data: mediaRows } = await supabase
     .from('messages')
     .select('file_path')
@@ -25,4 +22,13 @@ export const cleanupExpiredRooms = async () => {
 
   await supabase.from('rooms').delete().in('id', roomIds);
   return { removedRooms: roomIds.length };
+};
+
+export const cleanupExpiredRooms = async () => {
+  const now = new Date().toISOString();
+  const { data: rooms, error } = await supabase.from('rooms').select('id').lte('expires_at', now);
+  if (error || !rooms?.length) return { removedRooms: 0 };
+
+  const roomIds = rooms.map((r) => r.id);
+  return cleanupRoomsByIds(roomIds);
 };

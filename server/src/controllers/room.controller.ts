@@ -53,8 +53,8 @@ export const terminateRoomController = async (req: Request, res: Response) => {
     res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
     return;
   }
-  emitRoomExpired(result.room.id, { reason: 'terminated-by-creator' });
-  res.json(successResponse(result.room));
+  emitRoomExpired(result.roomId, { reason: 'terminated-by-creator' });
+  res.json(successResponse(result));
 };
 
 export const getMyRoomsController = async (req: Request, res: Response) => {

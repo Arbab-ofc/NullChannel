@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { generateCode } from '../utils/generateCode.js';
+import { cleanupRoomsByIds } from './cleanup.service.js';
 
 const roomSelect = 'id, code, creator_id, created_at, expires_at';
 
@@ -31,14 +32,6 @@ export const terminateRoom = async (code: string, senderId: string) => {
   const room = await getRoomByCode(code);
   if (!room) return { error: 'ROOM_NOT_FOUND' as const };
   if (room.creator_id !== senderId) return { error: 'FORBIDDEN' as const };
-
-  const { data, error } = await supabase
-    .from('rooms')
-    .update({ expires_at: new Date().toISOString() })
-    .eq('id', room.id)
-    .select(roomSelect)
-    .single();
-
-  if (error) throw error;
-  return { room: data };
+  await cleanupRoomsByIds([room.id]);
+  return { roomId: room.id, code: room.code, terminated: true as const };
 };

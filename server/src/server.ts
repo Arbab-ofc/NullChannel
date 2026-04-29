@@ -9,7 +9,11 @@ const httpServer = createServer(app);
 createSocketServer(httpServer);
 
 cron.schedule('*/15 * * * *', async () => {
-  await cleanupExpiredRooms();
+  try {
+    await cleanupExpiredRooms();
+  } catch (error) {
+    console.error('Cleanup job failed', error);
+  }
 });
 
 httpServer.on('error', (error: Error & { code?: string }) => {
@@ -22,4 +26,8 @@ httpServer.on('error', (error: Error & { code?: string }) => {
 
 httpServer.listen(env.PORT, () => {
   console.log(`Server running on ${env.PORT}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection', reason);
 });

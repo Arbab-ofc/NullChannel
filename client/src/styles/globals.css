@@ -54,18 +54,47 @@ body {
 }
 
 .neo-action {
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
-  will-change: transform;
+  transition: box-shadow 140ms ease, border-color 140ms ease, filter 140ms ease;
 }
 
 .neo-action:hover {
-  transform: translate(2px, 2px);
-  box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+  box-shadow: 8px 8px 0 hsl(var(--shadow-offset));
+  filter: brightness(1.04);
 }
 
 .neo-action:active {
-  transform: translate(4px, 4px);
-  box-shadow: 4px 4px 0 hsl(var(--shadow-offset));
+  box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+  filter: brightness(0.98);
+}
+
+@media (max-width: 1023px) {
+  .neo-panel {
+    box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+  }
+  .neo-action {
+    box-shadow: 6px 6px 0 hsl(var(--shadow-offset));
+  }
+  .neo-action:hover {
+    box-shadow: 7px 7px 0 hsl(var(--shadow-offset));
+  }
+  .neo-action:active {
+    box-shadow: 5px 5px 0 hsl(var(--shadow-offset));
+  }
+}
+
+@media (max-width: 639px) {
+  .neo-panel {
+    box-shadow: 4px 4px 0 hsl(var(--shadow-offset));
+  }
+  .neo-action {
+    box-shadow: 4px 4px 0 hsl(var(--shadow-offset));
+  }
+  .neo-action:hover {
+    box-shadow: 5px 5px 0 hsl(var(--shadow-offset));
+  }
+  .neo-action:active {
+    box-shadow: 3px 3px 0 hsl(var(--shadow-offset));
+  }
 }
 
 :root.light .neo-panel {

@@ -20,21 +20,37 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
         return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
       }
       if (room.room_type === 'private') {
-        const alreadyActive = await isActiveMember(room.id, parsed.data.senderId);
-        if (!alreadyActive) {
-          const activeCount = await countActiveMembers(room.id);
-          if (activeCount >= 2) {
-            return socket.emit('socket-error', { code: 'ROOM_FULL', message: 'Private channel allows only 2 active users.' });
+        try {
+          const alreadyActive = await isActiveMember(room.id, parsed.data.senderId);
+          if (!alreadyActive) {
+            const activeCount = await countActiveMembers(room.id);
+            if (activeCount >= 2) {
+              return socket.emit('socket-error', { code: 'ROOM_FULL', message: 'Private channel allows only 2 active users.' });
+            }
           }
+        } catch {
+          // Do not block join if membership checks fail unexpectedly.
         }
       }
       const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
 
       socket.join(room.id);
-      await joinMembership(room.id, parsed.data.senderId, effectiveName);
+      try {
+        await joinMembership(room.id, parsed.data.senderId, effectiveName);
+      } catch {
+        // Membership persistence failure should not block real-time join.
+      }
       socket.emit('room-joined', room);
-    } catch {
-      socket.emit('socket-error', { code: 'SOCKET_JOIN_FAILED', message: 'Unable to join room right now.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to join room right now.';
+      if (message.includes('room_members') || message.includes('sender_name')) {
+        socket.emit('socket-error', {
+          code: 'DB_SCHEMA_OUTDATED',
+          message: 'Database schema is outdated. Run docs/supabase-migration-v3.sql and retry.'
+        });
+        return;
+      }
+      socket.emit('socket-error', { code: 'SOCKET_JOIN_FAILED', message });
     }
   });
 

@@ -19,6 +19,15 @@ export const ensureRoomSecret = () => {
 
 export const getRoomSecret = () => window.location.hash.slice(1);
 
+export const normalizeRoomSecret = (input: string) => {
+  const value = input.trim();
+  if (!value) return '';
+  if (value.includes('#')) {
+    return value.split('#').pop()?.trim() ?? '';
+  }
+  return value;
+};
+
 export const encryptText = async (plain: string, secret: string) => {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await keyFromSecret(secret);

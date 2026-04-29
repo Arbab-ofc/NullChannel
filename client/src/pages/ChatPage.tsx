@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -27,6 +27,7 @@ export default function ChatPage() {
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [nameInput, setNameInput] = useState('');
   const [senderName, setSenderName] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -168,7 +169,7 @@ export default function ChatPage() {
     </div>
   </main>;
 
-  return <main className="mx-auto grid min-h-screen w-full max-w-6xl gap-4 bg-bg px-4 py-5 sm:grid-cols-[1fr_280px] sm:px-8 sm:py-8">
+  return <main className="mx-auto grid min-h-screen w-full max-w-7xl gap-4 bg-bg px-3 py-4 sm:px-5 sm:py-6 lg:grid-cols-[1fr_300px] lg:px-8 lg:py-8">
     {room.room_type === 'group' && !senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
@@ -193,7 +194,7 @@ export default function ChatPage() {
         </Button>
       </div>
     </div>}
-    <section className="flex min-h-[80vh] flex-col gap-4">
+    <section className="flex min-h-[70vh] flex-col gap-4 lg:min-h-[82vh]">
       <header className="neo-panel p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -205,7 +206,7 @@ export default function ChatPage() {
             <p className="text-lg font-bold text-punch">{left}</p>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 hidden flex-wrap gap-2 lg:flex">
           <ThemeToggle />
           <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
           <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
@@ -213,6 +214,25 @@ export default function ChatPage() {
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
           <span className="ml-auto inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>
         </div>
+        <div className="mt-4 flex items-center justify-between gap-2 lg:hidden">
+          <span className="inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>
+          <button
+            className="neo-action inline-flex h-10 w-10 items-center justify-center border-2 border-accent bg-panel"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Toggle chat menu"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+        {menuOpen && (
+          <div className="mt-3 grid gap-2 lg:hidden">
+            <ThemeToggle />
+            <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
+            <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
+            <Button onClick={leaveRoom}><DoorOpen className="mr-2 inline h-4 w-4" />Leave Room</Button>
+            {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
+          </div>
+        )}
       </header>
 
       <section className="neo-panel flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
@@ -231,7 +251,7 @@ export default function ChatPage() {
       </section>
 
     <footer className="neo-panel p-3">
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 md:flex-row">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -259,14 +279,14 @@ export default function ChatPage() {
             }}
           />
         </label>
-        <Button className="h-12 sm:w-40" onClick={send}>Send</Button>
+        <Button className="h-12 w-full md:w-40" onClick={send}>Send</Button>
       </div>
     </footer>
     </section>
 
     <aside className="neo-panel h-fit p-4">
       <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Rows2 className="h-4 w-4" />ACTIVE ROOMS</p>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
         {myRooms.length === 0 && <p className="text-sm text-muted">You are not active in any room.</p>}
         {myRooms.map((r) => (
           <button key={r.code} onClick={() => nav(`/chat/${r.code}`)} className={`neo-action w-full border-2 px-3 py-2 text-left text-sm ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>

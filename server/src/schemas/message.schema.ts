@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 const senderId = z.string().uuid();
 
+export const deleteMessageSchema = z.object({
+  senderId
+});
+
 export const socketMessageSchema = z.object({
   roomCode: z.string().trim().length(8).regex(/^[A-Z0-9]+$/),
   senderId,

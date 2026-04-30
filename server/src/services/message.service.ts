@@ -54,3 +54,27 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
   if (error) throw error;
   return data;
 };
+
+export const getMessageById = async (messageId: string) => {
+  let { data, error } = await supabase
+    .from('messages')
+    .select('id, room_id, sender_id, file_path')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (error?.message?.includes('file_path')) {
+    const fallback = await supabase
+      .from('messages')
+      .select('id, room_id, sender_id')
+      .eq('id', messageId)
+      .maybeSingle();
+    data = fallback.data ? { ...fallback.data, file_path: null } : null;
+    error = fallback.error;
+  }
+  if (error) throw error;
+  return data;
+};
+
+export const deleteMessageById = async (messageId: string) => {
+  const { error } = await supabase.from('messages').delete().eq('id', messageId);
+  if (error) throw error;
+};

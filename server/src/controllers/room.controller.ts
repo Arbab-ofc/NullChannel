@@ -1,10 +1,12 @@
 import type { Request, Response } from 'express';
 import { createRoom, getRoomByCode, terminateRoom } from '../services/room.service.js';
-import { listMessages } from '../services/message.service.js';
+import { deleteMessageById, getMessageById, listMessages } from '../services/message.service.js';
+import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
+import { deleteMessageSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitRoomExpired } from '../sockets/emitter.js';
+import { emitMessageDeleted, emitRoomExpired } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -44,6 +46,40 @@ export const getMessagesController = async (req: Request, res: Response) => {
   }
   const messages = await listMessages(room.id);
   res.json(successResponse(messages));
+};
+
+export const deleteMessageController = async (req: Request, res: Response) => {
+  const parsed = deleteMessageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const messageId = String(req.params.messageId ?? '');
+  const room = await getRoomByCode(code);
+  if (!room) {
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  const message = await getMessageById(messageId);
+  if (!message || message.room_id !== room.id) {
+    res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
+    return;
+  }
+  if (message.sender_id !== parsed.data.senderId) {
+    res.status(403).json(errorResponse('FORBIDDEN', 'You can delete only your own messages.'));
+    return;
+  }
+  if (message.file_path) {
+    try {
+      await deleteMediaByFileId(message.file_path);
+    } catch {
+      // Media deletion is best-effort; the database message should still be removed.
+    }
+  }
+  await deleteMessageById(message.id);
+  emitMessageDeleted(room.id, { messageId: message.id });
+  res.json(successResponse({ deleted: true, messageId: message.id }));
 };
 
 export const terminateRoomController = async (req: Request, res: Response) => {

@@ -9,3 +9,7 @@ export const setSocketServer = (io: Server) => {
 export const emitRoomExpired = (roomId: string, payload: { reason: string }) => {
   ioRef?.to(roomId).emit('room-expired', payload);
 };
+
+export const emitMessageDeleted = (roomId: string, payload: { messageId: string }) => {
+  ioRef?.to(roomId).emit('message-deleted', payload);
+};

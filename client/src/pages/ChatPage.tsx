@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2 } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -27,7 +27,9 @@ export default function ChatPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [deletingMessageIds, setDeletingMessageIds] = useState<Record<string, boolean>>({});
   const [notices, setNotices] = useState<SystemNotice[]>([]);
+  const [toast, setToast] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [senderName, setSenderName] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -43,6 +45,7 @@ export default function ChatPage() {
   const typingTimeouts = useRef<Record<string, number>>({});
   const lastTypingAt = useRef(0);
   const redirectTimeout = useRef<number | null>(null);
+  const toastTimeout = useRef<number | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -117,6 +120,7 @@ export default function ChatPage() {
 
   useEffect(() => () => {
     if (redirectTimeout.current) window.clearTimeout(redirectTimeout.current);
+    if (toastTimeout.current) window.clearTimeout(toastTimeout.current);
   }, []);
 
   useEffect(() => {
@@ -151,6 +155,15 @@ export default function ChatPage() {
       setTypingUsers((p) => {
         const next = { ...p };
         delete next[msg.sender_id];
+        return next;
+      });
+    });
+    socket.on('message-deleted', (payload: { messageId?: string }) => {
+      if (!payload.messageId) return;
+      setMessages((p) => p.filter((message) => message.id !== payload.messageId));
+      setDeletingMessageIds((p) => {
+        const next = { ...p };
+        delete next[payload.messageId as string];
         return next;
       });
     });
@@ -205,6 +218,7 @@ export default function ChatPage() {
       socket.off('user-left');
       socket.off('user-joined');
       socket.off('user-typing');
+      socket.off('message-deleted');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
@@ -268,6 +282,40 @@ export default function ChatPage() {
       });
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimeout.current) window.clearTimeout(toastTimeout.current);
+    toastTimeout.current = window.setTimeout(() => setToast(''), 1800);
+  };
+
+  const copyToClipboard = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      showToast(label);
+    } catch {
+      showToast('Clipboard unavailable');
+    }
+  };
+
+  const deleteMessage = async (messageId?: string) => {
+    if (!room || !messageId || deletingMessageIds[messageId]) return;
+    setDeletingMessageIds((p) => ({ ...p, [messageId]: true }));
+    try {
+      const res = await api.delete(`/rooms/${room.code}/messages/${messageId}`, { data: { senderId } });
+      const deletedId = res.data.data?.messageId ?? messageId;
+      setMessages((p) => p.filter((message) => message.id !== deletedId));
+      showToast('Message deleted');
+    } catch {
+      showToast('Delete failed');
+    } finally {
+      setDeletingMessageIds((p) => {
+        const next = { ...p };
+        delete next[messageId];
+        return next;
+      });
     }
   };
 
@@ -373,8 +421,8 @@ export default function ChatPage() {
             </Button>
           )}
           <ThemeToggle />
-          <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
-          <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
+          <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
+          <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
           <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
           {isJoined && <span className="ml-auto inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>}
@@ -408,8 +456,8 @@ export default function ChatPage() {
                   {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
                 </Button>
               )}
-              <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
-              <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
+              <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
+              <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
               <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
               {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
             </div>
@@ -434,8 +482,21 @@ export default function ChatPage() {
           </div>
         ))}
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
-        {messages.map((m, i) => <article key={m.id ?? i} className={`max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
-          <p className="mb-1 text-[10px] uppercase tracking-wider text-muted">{m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
+        {messages.map((m, i) => <article key={m.id ?? i} className={`group relative max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-wider text-muted">{m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
+            {m.sender_id === senderId && m.id && (
+              <button
+                className="message-delete-button"
+                onClick={() => deleteMessage(m.id)}
+                disabled={!!deletingMessageIds[m.id]}
+                aria-label="Delete message"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{deletingMessageIds[m.id] ? 'Deleting' : 'Delete'}</span>
+              </button>
+            )}
+          </div>
           {m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
           {m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
           {m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
@@ -537,6 +598,11 @@ export default function ChatPage() {
         </div>
       </div>
     </aside>
+    {!!toast && (
+      <div className="copy-toast code-font fixed bottom-4 left-1/2 z-[70] -translate-x-1/2 text-xs uppercase tracking-[0.18em]">
+        {toast}
+      </div>
+    )}
   </main>;
 }
 

@@ -14,8 +14,8 @@ export default {
         punch: 'hsl(var(--punch) / <alpha-value>)'
       },
       boxShadow: {
-        panel: '8px 8px 0px hsl(var(--shadow-offset))',
-        punch: '8px 8px 0px hsl(var(--punch))'
+        panel: '4px 4px 0px hsl(var(--shadow-offset))',
+        punch: '5px 5px 0px hsl(var(--punch))'
       }
     }
   },

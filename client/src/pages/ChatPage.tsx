@@ -300,7 +300,7 @@ export default function ChatPage() {
               }
             }}
           />
-        <label className="neo-action inline-flex h-11 w-full cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text shadow-panel md:w-auto">
+        <label className="retro-upload-button neo-action inline-flex h-11 w-full cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text md:w-auto">
           <ImagePlus className="mr-2 h-4 w-4" />
           {uploadingImage ? 'Uploading' : 'Image'}
           <input

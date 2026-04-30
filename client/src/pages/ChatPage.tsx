@@ -59,6 +59,7 @@ export default function ChatPage() {
   const recordingStartedAt = useRef(0);
   const recordingInterval = useRef<number | null>(null);
   const recordingLimitTimeout = useRef<number | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -140,6 +141,10 @@ export default function ChatPage() {
     if (recordingLimitTimeout.current) window.clearTimeout(recordingLimitTimeout.current);
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  }, [messages, notices, typingUsers]);
 
   useEffect(() => {
     if (!room) return;
@@ -499,7 +504,7 @@ export default function ChatPage() {
     </div>
   </main>;
 
-  return <main className="mx-auto grid min-h-screen w-full max-w-7xl gap-3 bg-bg px-2 py-3 sm:gap-4 sm:px-4 sm:py-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8 lg:py-8">
+  return <main className="mx-auto grid h-[100svh] w-full max-w-7xl gap-2 overflow-hidden bg-bg px-2 py-2 sm:gap-3 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-4 lg:px-8 lg:py-6">
     {!senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
@@ -526,15 +531,15 @@ export default function ChatPage() {
         </Button>
       </div>
     </div>}
-    <section className="order-1 flex min-h-[68vh] min-w-0 flex-col gap-3 lg:order-1 lg:min-h-[82vh] lg:gap-4">
-      <header className="neo-panel p-3 sm:p-4 lg:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="code-font text-xs tracking-[0.2em] text-cyan">NULLCHANNEL / SESSION ACTIVE</p>
+    <section className="order-1 flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden sm:gap-3 lg:order-1 lg:gap-4">
+      <header className="neo-panel shrink-0 p-2 sm:p-4 lg:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="code-font hidden text-xs tracking-[0.2em] text-cyan sm:block">NULLCHANNEL / SESSION ACTIVE</p>
             <p className="mt-1 text-sm font-semibold uppercase">{room.room_name}</p>
-            <p className="code-font mt-1 text-sm tracking-widest">CHANNEL ID: {room.code}</p>
+            <p className="code-font mt-1 truncate text-xs tracking-widest sm:text-sm">CHANNEL ID: {room.code}</p>
           </div>
-          <div className="text-right">
+          <div className="shrink-0 text-right">
             <p className="code-font text-xs tracking-[0.2em] text-muted">EXPIRES IN</p>
             <p className="text-lg font-bold text-punch">{left}</p>
           </div>
@@ -553,7 +558,7 @@ export default function ChatPage() {
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
           {isJoined && <span className="ml-auto inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>}
         </div>
-        <div className="mt-4 flex items-center justify-between gap-2 xl:hidden">
+        <div className="mt-2 flex items-center justify-between gap-2 sm:mt-4 xl:hidden">
           {isJoined ? <span className="inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span> : <span className="inline-flex items-center gap-2 border-2 border-accent bg-panel px-3 py-2 text-xs uppercase tracking-wider text-muted">Not Joined</span>}
           <button
             className="neo-action inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-accent bg-panel"
@@ -591,7 +596,7 @@ export default function ChatPage() {
         </>
       </header>
 
-      <section className="neo-panel flex-1 space-y-3 overflow-y-auto p-3 sm:p-4 lg:p-6">
+      <section className="chat-transcript neo-panel min-h-[62svh] flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:min-h-[64svh] sm:p-4 lg:min-h-0 lg:p-5">
         {!isJoined && room.creator_id !== senderId && (
           <div className="border-2 border-punch bg-panel px-3 py-2 text-xs uppercase tracking-wider text-muted">
             Press Join Room to enter this channel.
@@ -628,14 +633,15 @@ export default function ChatPage() {
           {!m.deleted && m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
           {!m.deleted && m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
         </article>)}
+        <div ref={messagesEndRef} className="h-1" />
       </section>
 
-    <footer className="neo-panel sticky bottom-0 z-10 p-2.5 sm:p-3">
+    <footer className="neo-panel z-10 shrink-0 p-2 sm:p-3">
       <div className="grid gap-2">
         <textarea
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
-          className="min-h-16 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-10 w-full resize-none border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60 sm:h-14"
           placeholder={isJoined ? 'Type a transmission' : 'Join this channel to send'}
           disabled={!isJoined || recordingVoice}
           onKeyDown={(e) => {
@@ -683,7 +689,7 @@ export default function ChatPage() {
             {recordingVoice ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             <span>{recordingVoice ? 'Stop' : uploadingVoice ? 'Sending voice' : 'Voice'}</span>
           </button>
-          <Button className="h-11 w-full md:ml-auto md:w-36" onClick={send} disabled={!isJoined || recordingVoice}>Send</Button>
+          <Button className="h-11 flex-1 md:ml-auto md:w-36 md:flex-none" onClick={send} disabled={!isJoined || recordingVoice}>Send</Button>
         </div>
       </div>
       {typingNames.length > 0 && (
@@ -694,7 +700,7 @@ export default function ChatPage() {
     </footer>
     </section>
 
-    <aside className="neo-panel order-2 h-fit min-w-0 p-3 sm:p-4 lg:order-2">
+    <aside className="neo-panel order-2 hidden min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4 lg:order-2 lg:block">
       <div className="mb-5 border-b-2 border-accent/40 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Radio className="h-4 w-4" />PARTICIPANTS</p>

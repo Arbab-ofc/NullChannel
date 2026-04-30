@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House } from 'lucide-react';
 import { Button } from '../components/common/Button';
@@ -12,6 +12,7 @@ import { LoadingSignal } from '../components/common/LoadingSignal';
 type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
 type SystemNotice = { id: string; text: string };
+type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
 
 export default function ChatPage() {
   const { code = '' } = useParams();
@@ -34,6 +35,9 @@ export default function ChatPage() {
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [terminateBusy, setTerminateBusy] = useState(false);
   const [joinError, setJoinError] = useState('');
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const typingTimeouts = useRef<Record<string, number>>({});
+  const lastTypingAt = useRef(0);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -97,16 +101,46 @@ export default function ChatPage() {
       }
       if (payload?.message) setJoinError(payload.message);
     });
-    socket.on('receive-message', (msg) => setMessages((p) => [...p, msg]));
+    socket.on('receive-message', (msg: Msg) => {
+      setMessages((p) => [...p, msg]);
+      window.clearTimeout(typingTimeouts.current[msg.sender_id]);
+      setTypingUsers((p) => {
+        const next = { ...p };
+        delete next[msg.sender_id];
+        return next;
+      });
+    });
     socket.on('user-left', (payload: { senderId?: string; senderName?: string }) => {
       if (payload?.senderId === senderId) return;
       const name = payload?.senderName ?? 'A user';
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: `${name} left the room` }]);
+      if (payload?.senderId) {
+        window.clearTimeout(typingTimeouts.current[payload.senderId]);
+        setTypingUsers((p) => {
+          const next = { ...p };
+          delete next[payload.senderId as string];
+          return next;
+        });
+      }
+    });
+    socket.on('user-typing', (payload: TypingPayload) => {
+      if (!payload.senderId || payload.senderId === senderId || payload.roomCode !== room.code) return;
+      const name = payload.senderName ?? `User-${payload.senderId.slice(0, 6)}`;
+      setTypingUsers((p) => ({ ...p, [payload.senderId as string]: name }));
+      window.clearTimeout(typingTimeouts.current[payload.senderId]);
+      typingTimeouts.current[payload.senderId] = window.setTimeout(() => {
+        setTypingUsers((p) => {
+          const next = { ...p };
+          delete next[payload.senderId as string];
+          return next;
+        });
+      }, 1800);
     });
     socket.on('room-expired', () => {
       setIsJoined(false);
       setRoom(null);
       setPageState('missing');
+      setTypingUsers({});
       loadMyRooms().catch(() => undefined);
       nav('/');
     });
@@ -115,7 +149,16 @@ export default function ChatPage() {
       socket.emit('join-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
     }
 
-    return () => { socket.off('receive-message'); socket.off('room-expired'); socket.off('socket-error'); socket.off('user-left'); socket.off('room-joined'); };
+    return () => {
+      socket.off('receive-message');
+      socket.off('room-expired');
+      socket.off('socket-error');
+      socket.off('user-left');
+      socket.off('user-typing');
+      socket.off('room-joined');
+      Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
+      typingTimeouts.current = {};
+    };
   }, [room, socket, senderId, senderName, loadMyRooms, nav]);
 
   const joinCurrentRoom = () => {
@@ -137,6 +180,16 @@ export default function ChatPage() {
     setText('');
   };
 
+  const handleTextChange = (value: string) => {
+    setText(value);
+    if (!room || !isJoined || !value.trim()) return;
+    if (room.room_type === 'group' && !senderName) return;
+    const now = Date.now();
+    if (now - lastTypingAt.current < 900) return;
+    lastTypingAt.current = now;
+    socket.emit('typing', { roomCode: room.code, senderId, senderName: senderName || undefined });
+  };
+
   const sendImage = async (file: File) => {
     if (!room || !isJoined) return;
     if (room.room_type === 'group' && !senderName) return;
@@ -148,6 +201,7 @@ export default function ChatPage() {
       const form = new FormData();
       form.append('file', file);
       form.append('roomCode', room.code);
+      form.append('senderId', senderId);
       form.append('type', 'image');
       const res = await api.post('/media/upload', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -173,6 +227,7 @@ export default function ChatPage() {
       socket.emit('leave-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
       await api.post(`/rooms/${room.code}/leave`, { senderId }).catch(() => undefined);
       setIsJoined(false);
+      setTypingUsers({});
       await loadMyRooms();
     } finally {
       setLeaveBusy(false);
@@ -190,6 +245,9 @@ export default function ChatPage() {
       setTerminateBusy(false);
     }
   };
+
+  const typingNames = Object.values(typingUsers);
+  const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
 
   if (pageState === 'loading') return <main className="grid min-h-screen place-items-center bg-bg p-6">
     <div className="neo-panel loading-panel max-w-md p-8 text-center">
@@ -327,9 +385,10 @@ export default function ChatPage() {
       <div className="flex flex-col gap-2 md:flex-row md:items-end">
           <textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="min-h-11 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan"
-            placeholder="Type a transmission"
+            onChange={(e) => handleTextChange(e.target.value)}
+            className="min-h-11 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60"
+            placeholder={isJoined ? 'Type a transmission' : 'Join this channel to send'}
+            disabled={!isJoined}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -337,14 +396,19 @@ export default function ChatPage() {
               }
             }}
           />
-        <label className={`retro-upload-button neo-action inline-flex h-11 w-full items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text md:w-auto ${uploadingImage ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}>
+        {typingNames.length > 0 && (
+          <div className="typing-indicator md:hidden">
+            <LoadingSignal label={typingLabel} />
+          </div>
+        )}
+        <label className={`retro-upload-button neo-action inline-flex h-11 w-full items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text md:w-auto ${uploadingImage ? 'cursor-wait opacity-70' : isJoined ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
           <ImagePlus className="mr-2 h-4 w-4" />
           {uploadingImage ? <LoadingSignal label="Uploading" /> : 'Image'}
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
             className="hidden"
-            disabled={uploadingImage}
+            disabled={uploadingImage || !isJoined}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) sendImage(file).catch(() => undefined);
@@ -354,6 +418,11 @@ export default function ChatPage() {
         </label>
         <Button className="h-11 w-full md:w-40" onClick={send} disabled={!isJoined}>Send</Button>
       </div>
+      {typingNames.length > 0 && (
+        <div className="typing-indicator mt-2 hidden md:inline-flex">
+          <LoadingSignal label={typingLabel} />
+        </div>
+      )}
     </footer>
     </section>
 

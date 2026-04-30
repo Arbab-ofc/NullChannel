@@ -167,6 +167,19 @@ body {
   overflow: hidden;
 }
 
+.typing-indicator {
+  align-items: center;
+  width: fit-content;
+  border: 2px solid hsl(var(--cyan) / 0.6);
+  background: hsl(var(--panel));
+  padding: 0.5rem 0.75rem;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: hsl(var(--muted));
+}
+
 @keyframes signal-rise {
   0%,
   100% {

@@ -7,6 +7,7 @@ import { countActiveMembers, isActiveMember, joinMembership, leaveMembership } f
 
 const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
 const leaveSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
+const typingSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24).optional() });
 
 export const registerRoomSocket = (io: Server, socket: Socket) => {
   socket.on('join-room', async (payload) => {
@@ -34,12 +35,8 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
       }
       const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
 
+      await joinMembership(room.id, parsed.data.senderId, effectiveName);
       socket.join(room.id);
-      try {
-        await joinMembership(room.id, parsed.data.senderId, effectiveName);
-      } catch {
-        // Membership persistence failure should not block real-time join.
-      }
       socket.emit('room-joined', room);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to join room right now.';
@@ -61,6 +58,10 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
 
       const room = await getRoomByCode(parsed.data.roomCode);
       if (!room) return socket.emit('room-expired', { message: 'Channel terminated.' });
+      const activeMember = await isActiveMember(room.id, parsed.data.senderId);
+      if (!activeMember) {
+        return socket.emit('socket-error', { code: 'JOIN_REQUIRED', message: 'Join this channel before sending messages.' });
+      }
       if (room.room_type === 'group' && !parsed.data.senderName) {
         return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for group room.' });
       }
@@ -82,8 +83,22 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
     }
   });
 
-  socket.on('typing', ({ roomCode, senderId }) => {
-    socket.broadcast.emit('user-typing', { roomCode, senderId });
+  socket.on('typing', async (payload) => {
+    try {
+      const parsed = typingSchema.safeParse(payload);
+      if (!parsed.success) return;
+      const room = await getRoomByCode(parsed.data.roomCode.toUpperCase());
+      if (!room) return;
+      const activeMember = await isActiveMember(room.id, parsed.data.senderId);
+      if (!activeMember) return;
+      socket.to(room.id).emit('user-typing', {
+        roomCode: room.code,
+        senderId: parsed.data.senderId,
+        senderName: parsed.data.senderName
+      });
+    } catch {
+      // Typing indicators are non-critical and should not interrupt chat.
+    }
   });
 
   socket.on('leave-room', async (payload) => {

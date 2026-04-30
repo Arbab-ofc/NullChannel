@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { mediaBodySchema } from '../schemas/media.schema.js';
 import { uploadMedia } from '../services/media.service.js';
 import { getRoomByCode } from '../services/room.service.js';
+import { isActiveMember } from '../services/membership.service.js';
 import { LIMITS } from '../constants/limits.js';
 import { errorResponse, successResponse } from '../utils/apiResponse.js';
 
@@ -18,6 +19,12 @@ export const uploadMediaController = async (req: Request, res: Response) => {
   const room = await getRoomByCode(parsed.data.roomCode);
   if (!room) {
     res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+
+  const activeMember = await isActiveMember(room.id, parsed.data.senderId);
+  if (!activeMember) {
+    res.status(403).json(errorResponse('JOIN_REQUIRED', 'Join this channel before sending media.'));
     return;
   }
 

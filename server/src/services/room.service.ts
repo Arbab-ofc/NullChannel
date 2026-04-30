@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { generateCode } from '../utils/generateCode.js';
 import { cleanupRoomsByIds } from './cleanup.service.js';
+import { joinMembership } from './membership.service.js';
 
 const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at';
 
@@ -20,7 +21,10 @@ export const createRoom = async (creatorId: string, roomType: 'private' | 'group
   for (let i = 0; i < 5; i += 1) {
     const code = generateCode();
     const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId, room_type: roomType, room_name: roomName }).select(roomSelectWithType).single();
-    if (!error && data) return data;
+    if (!error && data) {
+      await joinMembership(data.id, creatorId, `User-${creatorId.slice(0, 6)}`);
+      return data;
+    }
     if (error?.message) lastErrorMessage = error.message;
   }
   if (lastErrorMessage.includes('creator_id')) {

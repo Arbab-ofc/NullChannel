@@ -72,12 +72,26 @@ export const getActiveRoomsForSender = async (senderId: string) => {
 };
 
 export const getParticipantsForRoom = async (roomId: string) => {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('room_members')
     .select('sender_id, sender_name, joined_at')
     .eq('room_id', roomId)
     .is('left_at', null)
     .order('joined_at', { ascending: true });
+  if (error?.message?.includes('sender_name')) {
+    const fallback = await supabase
+      .from('room_members')
+      .select('sender_id, joined_at')
+      .eq('room_id', roomId)
+      .is('left_at', null)
+      .order('joined_at', { ascending: true });
+    data = (fallback.data ?? []).map((member) => ({
+      ...member,
+      sender_name: `User-${String(member.sender_id).slice(0, 6)}`
+    }));
+    error = fallback.error;
+  }
+  if (error?.message?.includes('room_members')) return [];
   if (error) throw error;
   return data ?? [];
 };

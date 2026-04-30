@@ -13,6 +13,7 @@ type Msg = { id?: string; sender_id: string; sender_name?: string; content?: str
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
+type Participant = { sender_id: string; sender_name: string; joined_at: string };
 
 export default function ChatPage() {
   const { code = '' } = useParams();
@@ -23,6 +24,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState('');
   const [myRooms, setMyRooms] = useState<Array<{ code: string; room_name?: string; room_type?: 'private' | 'group'; expires_at: string }>>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [nameInput, setNameInput] = useState('');
@@ -36,8 +39,10 @@ export default function ChatPage() {
   const [terminateBusy, setTerminateBusy] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const [expiredNotice, setExpiredNotice] = useState(false);
   const typingTimeouts = useRef<Record<string, number>>({});
   const lastTypingAt = useRef(0);
+  const redirectTimeout = useRef<number | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -52,6 +57,29 @@ export default function ChatPage() {
     }
   }, [senderId]);
 
+  const loadParticipants = useCallback(async (roomCode: string) => {
+    setParticipantsLoading(true);
+    try {
+      const res = await api.get(`/rooms/${roomCode}/participants`);
+      setParticipants(res.data.data ?? []);
+    } catch {
+      setParticipants([]);
+    } finally {
+      setParticipantsLoading(false);
+    }
+  }, []);
+
+  const showExpiredPopup = useCallback(() => {
+    setExpiredNotice(true);
+    setIsJoined(false);
+    setTypingUsers({});
+    loadMyRooms().catch(() => undefined);
+    if (redirectTimeout.current) window.clearTimeout(redirectTimeout.current);
+    redirectTimeout.current = window.setTimeout(() => {
+      nav('/');
+    }, 3000);
+  }, [loadMyRooms, nav]);
+
   useEffect(() => {
     setPageState('loading');
     setRoom(null);
@@ -59,16 +87,12 @@ export default function ChatPage() {
       const roomRes = await api.get(`/rooms/${code.toUpperCase()}`);
       const roomData = roomRes.data.data as Room;
       setRoom(roomData);
-      if (roomData.room_type === 'group') {
-        const cached = sessionStorage.getItem(`nullchannel_group_name_${roomData.code}`) ?? '';
-        setSenderName(cached);
-        setNameInput(cached);
-      } else {
-        setSenderName('');
-        setNameInput('');
-      }
+      const cached = sessionStorage.getItem(`nullchannel_name_${roomData.code}`) ?? '';
+      setSenderName(cached);
+      setNameInput(cached);
       const msgRes = await api.get(`/rooms/${code.toUpperCase()}/messages`);
       setMessages(msgRes.data.data);
+      await loadParticipants(roomData.code);
       const rooms = await loadMyRooms();
       const alreadyJoined = roomData.creator_id === senderId || rooms.some((r) => r.code === roomData.code);
       setIsJoined(alreadyJoined);
@@ -78,7 +102,22 @@ export default function ChatPage() {
       setPageState('missing');
       setRoomsLoading(false);
     });
-  }, [code, loadMyRooms, senderId]);
+  }, [code, loadMyRooms, loadParticipants, senderId]);
+
+  useEffect(() => {
+    if (!room) return;
+    const msUntilExpiry = new Date(room.expires_at).getTime() - Date.now();
+    if (msUntilExpiry <= 0) {
+      showExpiredPopup();
+      return;
+    }
+    const timeout = window.setTimeout(showExpiredPopup, msUntilExpiry);
+    return () => window.clearTimeout(timeout);
+  }, [room, showExpiredPopup]);
+
+  useEffect(() => () => {
+    if (redirectTimeout.current) window.clearTimeout(redirectTimeout.current);
+  }, []);
 
   useEffect(() => {
     if (!room) return;
@@ -87,6 +126,7 @@ export default function ChatPage() {
       setJoinBusy(false);
       setJoinError('');
       loadMyRooms().catch(() => undefined);
+      if (room) loadParticipants(room.code).catch(() => undefined);
     });
     socket.on('socket-error', (payload: { code?: string; message?: string }) => {
       setJoinBusy(false);
@@ -96,7 +136,11 @@ export default function ChatPage() {
         return;
       }
       if (payload?.code === 'NAME_REQUIRED') {
-        setJoinError('Enter a display name to join this group.');
+        setJoinError('Enter a display name to join this room.');
+        return;
+      }
+      if (payload?.code === 'VALIDATION_ERROR') {
+        setJoinError('Enter a display name to join this room.');
         return;
       }
       if (payload?.message) setJoinError(payload.message);
@@ -114,6 +158,7 @@ export default function ChatPage() {
       if (payload?.senderId === senderId) return;
       const name = payload?.senderName ?? 'A user';
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: `${name} left the room` }]);
+      setParticipants((p) => p.filter((participant) => participant.sender_id !== payload?.senderId));
       if (payload?.senderId) {
         window.clearTimeout(typingTimeouts.current[payload.senderId]);
         setTypingUsers((p) => {
@@ -122,6 +167,12 @@ export default function ChatPage() {
           return next;
         });
       }
+    });
+    socket.on('user-joined', (payload: { senderId?: string; senderName?: string }) => {
+      if (!payload?.senderId || payload.senderId === senderId) return;
+      const name = payload.senderName ?? 'A user';
+      setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: `${name} joined the room` }]);
+      loadParticipants(room.code).catch(() => undefined);
     });
     socket.on('user-typing', (payload: TypingPayload) => {
       if (!payload.senderId || payload.senderId === senderId || payload.roomCode !== room.code) return;
@@ -138,15 +189,13 @@ export default function ChatPage() {
     });
     socket.on('room-expired', () => {
       setIsJoined(false);
-      setRoom(null);
-      setPageState('missing');
       setTypingUsers({});
       loadMyRooms().catch(() => undefined);
-      nav('/');
+      showExpiredPopup();
     });
 
-    if (room.creator_id === senderId && (room.room_type !== 'group' || !!senderName)) {
-      socket.emit('join-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
+    if (room.creator_id === senderId && !!senderName) {
+      socket.emit('join-room', { roomCode: room.code, senderId, senderName });
     }
 
     return () => {
@@ -154,28 +203,30 @@ export default function ChatPage() {
       socket.off('room-expired');
       socket.off('socket-error');
       socket.off('user-left');
+      socket.off('user-joined');
       socket.off('user-typing');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
     };
-  }, [room, socket, senderId, senderName, loadMyRooms, nav]);
+  }, [room, socket, senderId, senderName, loadMyRooms, loadParticipants, showExpiredPopup, nav]);
 
-  const joinCurrentRoom = () => {
+  const joinCurrentRoom = (nameOverride?: string) => {
     if (!room) return;
-    if (room.room_type === 'group' && !senderName) {
-      setJoinError('Enter a display name to join this group.');
+    const effectiveName = (nameOverride ?? senderName).trim();
+    if (!effectiveName) {
+      setJoinError('Enter a display name to join this room.');
       return;
     }
     if (!socket.connected) socket.connect();
     setJoinBusy(true);
     setJoinError('');
-    socket.emit('join-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
+    socket.emit('join-room', { roomCode: room.code, senderId, senderName: effectiveName });
   };
 
   const send = () => {
     if (!room || !text.trim() || !isJoined) return;
-    if (room.room_type === 'group' && !senderName) return;
+    if (!senderName) return;
     socket.emit('send-message', { roomCode: room.code, senderId, senderName: senderName || undefined, type: 'text', content: text.trim() });
     setText('');
   };
@@ -183,7 +234,7 @@ export default function ChatPage() {
   const handleTextChange = (value: string) => {
     setText(value);
     if (!room || !isJoined || !value.trim()) return;
-    if (room.room_type === 'group' && !senderName) return;
+    if (!senderName) return;
     const now = Date.now();
     if (now - lastTypingAt.current < 900) return;
     lastTypingAt.current = now;
@@ -192,7 +243,7 @@ export default function ChatPage() {
 
   const sendImage = async (file: File) => {
     if (!room || !isJoined) return;
-    if (room.room_type === 'group' && !senderName) return;
+    if (!senderName) return;
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.type) || file.size > 5 * 1024 * 1024) return;
 
@@ -228,6 +279,7 @@ export default function ChatPage() {
       await api.post(`/rooms/${room.code}/leave`, { senderId }).catch(() => undefined);
       setIsJoined(false);
       setTypingUsers({});
+      setParticipants((p) => p.filter((participant) => participant.sender_id !== senderId));
       await loadMyRooms();
     } finally {
       setLeaveBusy(false);
@@ -249,6 +301,15 @@ export default function ChatPage() {
   const typingNames = Object.values(typingUsers);
   const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
 
+  if (expiredNotice) return <main className="grid min-h-screen place-items-center bg-bg p-6">
+    <div className="neo-panel loading-panel max-w-md p-8 text-center">
+      <p className="code-font text-xs tracking-[0.2em] text-punch">ROOM EXPIRED</p>
+      <h2 className="mt-2 text-2xl font-black uppercase">This channel has disappeared</h2>
+      <p className="mt-3 text-sm text-muted">You will be redirected home in 3 seconds.</p>
+      <LoadingSignal label="Closing session" className="mt-5 justify-center text-sm uppercase tracking-[0.16em] text-muted" />
+    </div>
+  </main>;
+
   if (pageState === 'loading') return <main className="grid min-h-screen place-items-center bg-bg p-6">
     <div className="neo-panel loading-panel max-w-md p-8 text-center">
       <p className="code-font text-xs tracking-[0.2em] text-cyan">SYNCING CHANNEL</p>
@@ -265,10 +326,10 @@ export default function ChatPage() {
   </main>;
 
   return <main className="mx-auto grid min-h-screen w-full max-w-7xl gap-3 bg-bg px-2 py-3 sm:gap-4 sm:px-4 sm:py-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8 lg:py-8">
-    {room.room_type === 'group' && !senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+    {!senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
-        <h3 className="mt-2 text-xl font-bold uppercase">Name required to join room chat</h3>
+        <h3 className="mt-2 text-xl font-bold uppercase">Name required to enter this room</h3>
         <input
           value={nameInput}
           onChange={(e) => setNameInput(e.target.value)}
@@ -282,9 +343,9 @@ export default function ChatPage() {
           onClick={() => {
             const value = nameInput.trim();
             if (value.length < 2) return;
-            sessionStorage.setItem(`nullchannel_group_name_${room.code}`, value);
+            sessionStorage.setItem(`nullchannel_name_${room.code}`, value);
             setSenderName(value);
-            setTimeout(() => joinCurrentRoom(), 0);
+            joinCurrentRoom(value);
           }}
         >
           {joinBusy ? <LoadingSignal label="Joining" /> : 'Continue'}
@@ -306,7 +367,7 @@ export default function ChatPage() {
         </div>
         <div className="mt-4 hidden flex-wrap gap-2 xl:flex">
           {room.creator_id !== senderId && (
-            <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : joinCurrentRoom} disabled={(joinBusy && !isJoined) || leaveBusy}>
+            <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : () => joinCurrentRoom()} disabled={(joinBusy && !isJoined) || leaveBusy}>
               <DoorOpen className="mr-2 inline h-4 w-4" />
               {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
             </Button>
@@ -342,7 +403,7 @@ export default function ChatPage() {
             <div className="grid gap-2">
               <ThemeToggle />
               {room.creator_id !== senderId && (
-                <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : joinCurrentRoom} disabled={(joinBusy && !isJoined) || leaveBusy}>
+                <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : () => joinCurrentRoom()} disabled={(joinBusy && !isJoined) || leaveBusy}>
                   <DoorOpen className="mr-2 inline h-4 w-4" />
                   {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
                 </Button>
@@ -427,6 +488,22 @@ export default function ChatPage() {
     </section>
 
     <aside className="neo-panel order-2 h-fit min-w-0 p-3 sm:p-4 lg:order-2">
+      <div className="mb-5 border-b-2 border-accent/40 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Radio className="h-4 w-4" />PARTICIPANTS</p>
+          <span className="border border-cyan px-2 py-1 text-[10px] uppercase tracking-wider text-muted">{participants.length} Active</span>
+        </div>
+        <div className="mt-3 grid gap-2">
+          {participantsLoading && <RoomLoadingRows />}
+          {!participantsLoading && participants.length === 0 && <p className="text-sm text-muted">No active participants yet.</p>}
+          {!participantsLoading && participants.map((participant) => (
+            <div key={participant.sender_id} className={`border-2 px-3 py-2 text-sm ${participant.sender_id === senderId ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel'}`}>
+              <p className="font-semibold uppercase">{participant.sender_id === senderId ? `${participant.sender_name} (You)` : participant.sender_name}</p>
+              <p className="code-font mt-1 text-[10px] uppercase tracking-[0.14em] text-muted">{participant.sender_id === room.creator_id ? 'Creator' : 'Member'}</p>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Rows2 className="h-4 w-4" />RECENT ACTIVE ROOMS</p>
         {roomsLoading && <LoadingSignal label="Syncing" className="code-font text-[10px] uppercase tracking-[0.14em] text-muted" />}

@@ -8,11 +8,20 @@ import { useLocalSender } from '../hooks/useLocalSender';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
+const expiryOptions = [
+  { label: '15 Min', value: 15 },
+  { label: '1 Hour', value: 60 },
+  { label: '6 Hours', value: 360 },
+  { label: '24 Hours', value: 1440 }
+] as const;
+
 export default function LandingPage() {
   const nav = useNavigate();
   const senderId = useLocalSender();
   const [joinCode, setJoinCode] = useState('');
   const [roomName, setRoomName] = useState('');
+  const [creatorName, setCreatorName] = useState('');
+  const [expiresInMinutes, setExpiresInMinutes] = useState<(typeof expiryOptions)[number]['value']>(1440);
   const [menuOpen, setMenuOpen] = useState(false);
   const [createType, setCreateType] = useState<'private' | 'group' | null>(null);
   const [createBusy, setCreateBusy] = useState<'private' | 'group' | null>(null);
@@ -28,13 +37,17 @@ export default function LandingPage() {
 
   const createChannel = async (roomType: 'private' | 'group') => {
     const name = roomName.trim();
-    if (name.length < 2 || createBusy) return;
+    const displayName = creatorName.trim();
+    if (name.length < 2 || displayName.length < 2 || createBusy) return;
     setCreateBusy(roomType);
     setCreateError('');
     try {
-      const res = await api.post('/rooms', { senderId, roomType, roomName: name });
+      const res = await api.post('/rooms', { senderId, senderName: displayName, roomType, roomName: name, expiresInMinutes });
+      sessionStorage.setItem(`nullchannel_name_${res.data.data.code}`, displayName);
       setCreateType(null);
       setRoomName('');
+      setCreatorName('');
+      setExpiresInMinutes(1440);
       nav(`/chat/${res.data.data.code}`);
     } catch {
       setCreateError('Unable to create room. Try again.');
@@ -101,7 +114,7 @@ export default function LandingPage() {
           <div>
             <p className="code-font text-xs tracking-[0.25em] text-cyan">UNAUTHENTICATED. TEMPORARY. LIVE.</p>
             <h2 className="mt-3 max-w-3xl text-4xl font-black uppercase leading-tight sm:text-6xl">Private channels that disappear.</h2>
-            <p className="mt-4 max-w-3xl text-base text-muted sm:text-lg">Create a temporary channel, share the code, and chat in real time. No account required. Everything expires after 24 hours.</p>
+            <p className="mt-4 max-w-3xl text-base text-muted sm:text-lg">Create a temporary channel, share the code, and chat in real time. No account required. You choose when it disappears.</p>
           </div>
           <div className="grid gap-3">
             <button className="hero-mode-card neo-action border-2 border-cyan bg-cyan/10 p-4 text-left" onClick={() => setCreateType('private')}>
@@ -142,7 +155,7 @@ export default function LandingPage() {
         </div>
         <div className="mt-6 flex flex-wrap gap-3 text-xs uppercase tracking-wider text-muted">
           <span className="border border-cyan px-3 py-1">No signup</span>
-          <span className="border border-cyan px-3 py-1">24-hour expiry</span>
+          <span className="border border-cyan px-3 py-1">15 min to 24 hour expiry</span>
           <span className="border border-cyan px-3 py-1">Real-time transport</span>
           <span className="border border-punch px-3 py-1">Private + group modes</span>
         </div>
@@ -211,7 +224,16 @@ export default function LandingPage() {
       <div className="fixed inset-0 z-50 grid place-items-center bg-black/65 p-4">
         <div className="neo-panel w-full max-w-md p-5">
           <p className="code-font text-xs tracking-[0.2em] text-cyan">CREATE {createType.toUpperCase()} ROOM</p>
-          <h3 className="mt-2 text-xl font-bold uppercase">Enter Room Name</h3>
+          <h3 className="mt-2 text-xl font-bold uppercase">Configure Channel</h3>
+          <input
+            value={creatorName}
+            onChange={(e) => setCreatorName(e.target.value)}
+            placeholder="Your display name"
+            className="mt-4 h-11 w-full border-2 border-accent bg-bg px-3 text-sm"
+            maxLength={24}
+            disabled={!!createBusy}
+            autoFocus
+          />
           <input
             value={roomName}
             onChange={(e) => setRoomName(e.target.value)}
@@ -219,12 +241,26 @@ export default function LandingPage() {
             className="mt-4 h-11 w-full border-2 border-accent bg-bg px-3 text-sm"
             maxLength={40}
             disabled={!!createBusy}
-            autoFocus
           />
-          <p className="mt-2 text-xs text-muted">Minimum 2 characters</p>
+          <p className="mt-2 text-xs text-muted">Names need at least 2 characters.</p>
+          <div className="mt-4">
+            <p className="code-font text-[10px] uppercase tracking-[0.2em] text-muted">Auto Expire After</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {expiryOptions.map((option) => (
+                <button
+                  key={option.value}
+                  className={`neo-action border-2 px-2 py-2 text-xs font-bold uppercase tracking-wider ${expiresInMinutes === option.value ? 'border-cyan bg-cyan/10 text-cyan' : 'border-accent bg-panel text-muted'}`}
+                  onClick={() => setExpiresInMinutes(option.value)}
+                  disabled={!!createBusy}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <Button onClick={() => { setCreateType(null); setRoomName(''); setCreateError(''); }} disabled={!!createBusy}>Cancel</Button>
-            <Button className="bg-accent text-bg" onClick={() => createChannel(createType)} disabled={roomName.trim().length < 2 || !!createBusy}>
+            <Button onClick={() => { setCreateType(null); setRoomName(''); setCreatorName(''); setExpiresInMinutes(1440); setCreateError(''); }} disabled={!!createBusy}>Cancel</Button>
+            <Button className="bg-accent text-bg" onClick={() => createChannel(createType)} disabled={roomName.trim().length < 2 || creatorName.trim().length < 2 || !!createBusy}>
               {createBusy === createType ? <LoadingSignal label="Creating" /> : 'Create'}
             </Button>
           </div>

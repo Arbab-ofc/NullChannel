@@ -5,7 +5,7 @@ import { joinMembership } from './membership.service.js';
 
 const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at';
 
-export const createRoom = async (creatorId: string, roomType: 'private' | 'group', roomName: string) => {
+export const createRoom = async (creatorId: string, creatorName: string, roomType: 'private' | 'group', roomName: string, expiresInMinutes: number) => {
   const { count, error: countError } = await supabase
     .from('rooms')
     .select('*', { count: 'exact', head: true })
@@ -20,9 +20,14 @@ export const createRoom = async (creatorId: string, roomType: 'private' | 'group
   let lastErrorMessage = 'Failed to create room';
   for (let i = 0; i < 5; i += 1) {
     const code = generateCode();
-    const { data, error } = await supabase.from('rooms').insert({ code, creator_id: creatorId, room_type: roomType, room_name: roomName }).select(roomSelectWithType).single();
+    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('rooms')
+      .insert({ code, creator_id: creatorId, room_type: roomType, room_name: roomName, expires_at: expiresAt })
+      .select(roomSelectWithType)
+      .single();
     if (!error && data) {
-      await joinMembership(data.id, creatorId, `User-${creatorId.slice(0, 6)}`);
+      await joinMembership(data.id, creatorId, creatorName);
       return data;
     }
     if (error?.message) lastErrorMessage = error.message;

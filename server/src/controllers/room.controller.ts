@@ -78,8 +78,9 @@ export const deleteMessageController = async (req: Request, res: Response) => {
     }
   }
   await deleteMessageById(message.id);
-  emitMessageDeleted(room.id, { messageId: message.id });
-  res.json(successResponse({ deleted: true, messageId: message.id }));
+  const deletedByName = message.sender_name ?? `User-${message.sender_id.slice(0, 6)}`;
+  emitMessageDeleted(room.id, { messageId: message.id, deletedBy: message.sender_id, deletedByName });
+  res.json(successResponse({ deleted: true, messageId: message.id, deletedBy: message.sender_id, deletedByName }));
 };
 
 export const terminateRoomController = async (req: Request, res: Response) => {

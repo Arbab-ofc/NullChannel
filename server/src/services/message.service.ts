@@ -58,16 +58,16 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
 export const getMessageById = async (messageId: string) => {
   let { data, error } = await supabase
     .from('messages')
-    .select('id, room_id, sender_id, file_path')
+    .select('id, room_id, sender_id, sender_name, file_path')
     .eq('id', messageId)
     .maybeSingle();
-  if (error?.message?.includes('file_path')) {
+  if (error?.message?.includes('sender_name') || error?.message?.includes('file_path')) {
     const fallback = await supabase
       .from('messages')
       .select('id, room_id, sender_id')
       .eq('id', messageId)
       .maybeSingle();
-    data = fallback.data ? { ...fallback.data, file_path: null } : null;
+    data = fallback.data ? { ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}`, file_path: null } : null;
     error = fallback.error;
   }
   if (error) throw error;

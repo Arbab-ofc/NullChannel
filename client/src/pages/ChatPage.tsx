@@ -9,7 +9,7 @@ import { useCountdown } from '../hooks/useCountdown';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
-type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
+type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
@@ -173,9 +173,16 @@ export default function ChatPage() {
         return next;
       });
     });
-    socket.on('message-deleted', (payload: { messageId?: string }) => {
+    socket.on('message-deleted', (payload: { messageId?: string; deletedBy?: string; deletedByName?: string }) => {
       if (!payload.messageId) return;
-      setMessages((p) => p.filter((message) => message.id !== payload.messageId));
+      setMessages((p) => p.map((message) => (message.id === payload.messageId ? {
+        ...message,
+        deleted: true,
+        deleted_by: payload.deletedBy,
+        deleted_by_name: payload.deletedByName,
+        content: 'This message was deleted.',
+        file_url: undefined
+      } : message)));
       setDeletingMessageIds((p) => {
         const next = { ...p };
         delete next[payload.messageId as string];
@@ -222,7 +229,7 @@ export default function ChatPage() {
       showExpiredPopup();
     });
 
-    if (room.creator_id === senderId && !!senderName) {
+    if ((isJoined || room.creator_id === senderId) && !!senderName) {
       socket.emit('join-room', { roomCode: room.code, senderId, senderName });
     }
 
@@ -238,7 +245,7 @@ export default function ChatPage() {
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
     };
-  }, [room, socket, senderId, senderName, loadMyRooms, loadParticipants, showExpiredPopup, nav]);
+  }, [room, socket, senderId, senderName, isJoined, loadMyRooms, loadParticipants, showExpiredPopup, nav]);
 
   const joinCurrentRoom = (nameOverride?: string) => {
     if (!room) return;
@@ -399,7 +406,14 @@ export default function ChatPage() {
     try {
       const res = await api.delete(`/rooms/${room.code}/messages/${messageId}`, { data: { senderId } });
       const deletedId = res.data.data?.messageId ?? messageId;
-      setMessages((p) => p.filter((message) => message.id !== deletedId));
+      setMessages((p) => p.map((message) => (message.id === deletedId ? {
+        ...message,
+        deleted: true,
+        deleted_by: res.data.data?.deletedBy ?? senderId,
+        deleted_by_name: res.data.data?.deletedByName ?? senderName,
+        content: 'You deleted this message.',
+        file_url: undefined
+      } : message)));
       showToast('Message deleted');
     } catch {
       showToast('Delete failed');
@@ -443,6 +457,7 @@ export default function ChatPage() {
   const typingNames = Object.values(typingUsers);
   const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
   const recordingTime = `${Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:${(recordingSeconds % 60).toString().padStart(2, '0')}`;
+  const deletedText = (message: Msg) => `${message.deleted_by === senderId ? 'You' : (message.deleted_by_name ?? 'A member')} deleted this transmission.`;
 
   if (expiredNotice) return <main className="grid min-h-screen place-items-center bg-bg p-6">
     <div className="neo-panel loading-panel max-w-md p-8 text-center">
@@ -577,10 +592,10 @@ export default function ChatPage() {
           </div>
         ))}
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
-        {messages.map((m, i) => <article key={m.id ?? i} className={`group relative max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
+        {messages.map((m, i) => <article key={m.id ?? i} className={`group relative max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.deleted ? 'mx-auto border-punch/70 bg-panel text-muted' : m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <p className="text-[10px] uppercase tracking-wider text-muted">{m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
-            {m.sender_id === senderId && m.id && (
+            <p className="text-[10px] uppercase tracking-wider text-muted">{m.deleted ? 'Message removed' : m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
+            {!m.deleted && m.sender_id === senderId && m.id && (
               <button
                 className="message-delete-button"
                 onClick={() => deleteMessage(m.id)}
@@ -592,9 +607,10 @@ export default function ChatPage() {
               </button>
             )}
           </div>
-          {m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
-          {m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
-          {m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
+          {m.deleted && <p className="code-font text-xs uppercase tracking-[0.16em]">{deletedText(m)}</p>}
+          {!m.deleted && m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
+          {!m.deleted && m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
+          {!m.deleted && m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
         </article>)}
       </section>
 

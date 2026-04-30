@@ -1,65 +1,332 @@
 # NullChannel
 
-Private channels that disappear.
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=000)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![Express](https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white)](https://expressjs.com/)
+[![Socket.io](https://img.shields.io/badge/Socket.io-4.x-010101?logo=socket.io&logoColor=white)](https://socket.io/)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
+[![ImageKit](https://img.shields.io/badge/ImageKit-Media-1E88E5)](https://imagekit.io/)
 
-## Overview
-NullChannel is a temporary private chat platform with no account signup. Users create or join an 8-character room and exchange text, image, and voice messages in real time. Rooms and messages expire after 24 hours.
+Short-lived, real-time channels with no signup.
 
-## Stack
-- Frontend: React, Vite, TypeScript, Tailwind, React Router, Socket.io Client
-- Backend: Node.js, Express, TypeScript, Socket.io, Supabase, ImageKit, Zod, Helmet
-- Database: Supabase PostgreSQL
+NullChannel is a temporary chat system for private and group rooms. Users create or join an 8-character code, chat in real time, send image or voice media, and let the room expire on a timer with automatic cleanup.
+
+<div align="center">
+  <img src="./docs/built-by-arbab-arshad.svg" alt="Built and developed by Arbab Arshad" width="100%" />
+</div>
+
+## Project Map
+
+| Area | What it does | Main files |
+| --- | --- | --- |
+| Frontend | Landing page, room join/create flow, chat UI, voice recording, participant list | `client/src/pages/*` |
+| Backend | REST APIs, validation, room lifecycle, message handling, cleanup | `server/src/controllers/*`, `server/src/services/*` |
+| Realtime | Socket room join, typing indicator, live message broadcast, tombstones | `server/src/sockets/*` |
+| Storage | Room metadata, messages, memberships, cleanup lifecycle | Supabase PostgreSQL |
+| Media | Image and voice upload plus deletion | ImageKit |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  A[Client: React + Vite] -->|REST| B[Express API]
+  A -->|Socket.io| C[Realtime Server]
+  B --> D[(Supabase PostgreSQL)]
+  C --> D
+  B --> E[ImageKit]
+  D --> F[Cleanup Job]
+  F --> E
+```
+
+## Product Snapshot
+
+| Signal | Value |
+| --- | --- |
+| Auth model | Anonymous, no account signup |
+| Room types | Private and group |
+| Room code length | 8 characters |
+| Media types | Text, image, voice |
+| Expiry options | 15 min, 1 hour, 6 hours, 24 hours |
+| Cleanup | Cron plus manual protected endpoint |
+| Realtime | Socket.io room broadcast |
 
 ## Key Features
-- No-login room creation and join flow
-- 8-character room code
-- Real-time messaging with Socket.io
-- Message types: text, image, voice
-- 24-hour expiration policy
-- Protected cleanup endpoint and cron cleanup job
-- Rate limiting and request validation
 
-## Security Notes
-- MVP is not fully end-to-end encrypted
-- HTTPS is required in production
-- Supabase service role key is backend-only
-- ImageKit private key is backend-only
+| Feature | Details |
+| --- | --- |
+| Anonymous rooms | No account required. Users join with a sender ID and display name. |
+| Private and group rooms | Room type can be `private` or `group`. |
+| Expiry presets | 15 min, 1 hour, 6 hours, 24 hours. |
+| Real-time chat | Socket.io broadcast for messages, typing, delete events, join/leave, expiry. |
+| Text, image, voice | Media upload is supported through the backend and ImageKit. |
+| Typing indicator | Live typing state with timeout cleanup. |
+| Participant list | Active members are shown in the chat sidebar. |
+| Copy feedback | Toasts for invite and room code copy actions. |
+| Message deletion | Users can delete their own messages, and tombstones show who deleted them. |
+| Room termination | Creator can terminate the room and trigger full cleanup. |
+| Expiry cleanup | Expired rooms are deleted by cron and via cleanup endpoint. |
+| Loading states | Skeletons and loading signals are used across the UI. |
 
-## Setup
+## Message Flow
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant C as Client
+  participant S as Server
+  participant DB as Supabase
+  participant M as ImageKit
+
+  U->>C: Type message or record voice
+  C->>S: POST /api/media/upload or socket send-message
+  alt Media upload
+    S->>M: Store file
+    M-->>S: fileUrl + fileId
+  end
+  S->>DB: Insert message row
+  S-->>C: Broadcast via Socket.io
+  C-->>U: Message appears in room
+```
+
+## Data Model
+
+| Table | Purpose |
+| --- | --- |
+| `rooms` | Room code, creator, type, room name, expiry timestamp |
+| `messages` | Text, image, and voice message records |
+| `room_members` | Membership, display name, join/leave state |
+
+## API Surface
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/rooms` | Create a room |
+| `GET` | `/api/rooms/:code` | Fetch a room by code |
+| `GET` | `/api/rooms/:code/messages` | List room messages |
+| `DELETE` | `/api/rooms/:code/messages/:messageId` | Delete a message |
+| `GET` | `/api/rooms/:code/participants` | List active participants |
+| `POST` | `/api/rooms/:code/leave` | Leave a room |
+| `POST` | `/api/rooms/:code/terminate` | Terminate a room |
+| `GET` | `/api/users/:senderId/rooms` | List active rooms for a sender |
+| `POST` | `/api/media/upload` | Upload image or voice media |
+| `POST` | `/api/cleanup` | Manual expired-room cleanup |
+
+## Health Checks
+
+| Endpoint | Purpose | Status |
+| --- | --- | --- |
+| `GET /api/health` | Service uptime and server status | Always available if app is running |
+| `GET /api/health/db` | Supabase connectivity check | Returns `200` when DB is reachable, `503` when not |
+
+```mermaid
+flowchart LR
+  A[GET /api/health] --> B[Server OK]
+  C[GET /api/health/db] --> D{Supabase reachable?}
+  D -- Yes --> E[200 OK]
+  D -- No --> F[503 Degraded]
+```
+
+## Socket Events
+
+| Direction | Event | Purpose |
+| --- | --- | --- |
+| Client -> Server | `join-room` | Join a socket room after membership is confirmed |
+| Client -> Server | `typing` | Send typing signal |
+| Client -> Server | `send-message` | Send a chat message payload |
+| Server -> Client | `new-message` | Broadcast a new message |
+| Server -> Client | `user-typing` | Broadcast typing status |
+| Server -> Client | `message-deleted` | Broadcast a tombstone update |
+| Server -> Client | `user-joined` | Broadcast participant join |
+| Server -> Client | `user-left` | Broadcast participant leave |
+| Server -> Client | `room-expired` | Broadcast room expiry or termination |
+
+## Repository Layout
+
+```text
+.
+|-- client
+|   `-- src
+|       |-- components
+|       |-- hooks
+|       |-- lib
+|       `-- pages
+|-- server
+|   `-- src
+|       |-- config
+|       |-- controllers
+|       |-- middlewares
+|       |-- routes
+|       |-- services
+|       |-- sockets
+|       `-- schemas
+`-- server/supabase
+    `-- schema.sql
+```
+
+## Prerequisites
+
+| Requirement | Notes |
+| --- | --- |
+| Node.js | Modern LTS version recommended |
+| npm | Workspaces are used at the repo root |
+| Supabase project | Required for database and authless storage layer |
+| ImageKit account | Required for image and voice uploads |
+
+## Environment Variables
+
+### Client
+
+| Variable | Example | Required |
+| --- | --- | --- |
+| `VITE_API_URL` | `http://localhost:5050` | Yes |
+
+### Server
+
+| Variable | Example | Required |
+| --- | --- | --- |
+| `PORT` | `5050` | No |
+| `NODE_ENV` | `development` | No |
+| `CLIENT_URL` | `http://localhost:5173` | Yes |
+| `SUPABASE_URL` | `https://xxxx.supabase.co` | Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | Yes |
+| `IMAGEKIT_PUBLIC_KEY` | `public_key` | Yes |
+| `IMAGEKIT_PRIVATE_KEY` | `private_key` | Yes |
+| `IMAGEKIT_URL_ENDPOINT` | `https://ik.imagekit.io/your-id` | Yes |
+| `CLEANUP_SECRET` | `random-secret` | Optional |
+
+## Local Setup
+
 1. Install dependencies:
-   - `npm install`
-2. Configure env files:
-   - Copy `server/.env.example` to `server/.env`
-   - Copy `client/.env.example` to `client/.env`
-3. Run development:
-   - `npm run dev`
+   ```bash
+   npm install
+   ```
+2. Set client env:
+   ```bash
+   cp client/.env.example client/.env
+   ```
+3. Set server env:
+   ```bash
+   cp server/.env.example server/.env
+   ```
+4. Fill the server env values for Supabase and ImageKit.
+5. Run the app:
+   ```bash
+   npm run dev
+   ```
 
 ## Scripts
-- `npm run dev`
-- `npm run dev:client`
-- `npm run dev:server`
-- `npm run build`
-- `npm run build:client`
-- `npm run build:server`
-- `npm run lint`
-- `npm run typecheck`
 
-## Supabase SQL
-- `server/supabase/schema.sql`
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Runs client and server together |
+| `npm run dev:client` | Runs the frontend only |
+| `npm run dev:server` | Runs the backend only |
+| `npm run build` | Builds both workspaces |
+| `npm run build:client` | Builds the frontend |
+| `npm run build:server` | Builds the backend |
+| `npm run lint` | Lints both workspaces |
+| `npm run typecheck` | Runs TypeScript checks on both workspaces |
+| `npm run test` | Runs backend tests |
 
 ## Deployment
-- Frontend deploy: Vercel (`client`)
-- Backend deploy: Render or Railway (`server`)
-- Set env vars from `.env.example`
-- Configure CORS `CLIENT_URL` to deployed frontend URL
-- Configure scheduled call to `POST /api/cleanup` with `x-cleanup-secret`
 
-## MVP Limitations
-- No full client-side E2EE yet
-- Anonymous sessions rely on local sender ID persistence
+### Recommended free setup
 
-## Future Roadmap
-- Client-side E2EE
-- Presence indicators
-- Early room termination UI + API
-- Better delivery receipts and retry queue
+| Service | Role |
+| --- | --- |
+| Vercel | Frontend deployment for `client` |
+| Render | Backend deployment for `server` |
+| Supabase | Database |
+| ImageKit | Media storage |
+
+### Deployment flow
+
+```mermaid
+flowchart LR
+  A[GitHub Repo] --> B[Vercel: client]
+  A --> C[Render: server]
+  C --> D[Supabase]
+  C --> E[ImageKit]
+  B --> C
+```
+
+### Vercel
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `client` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Environment variable | `VITE_API_URL=https://your-render-service.onrender.com` |
+
+### Render
+
+| Setting | Value |
+| --- | --- |
+| Root directory | Repo root |
+| Build command | `npm install && npm run build --workspace server` |
+| Start command | `npm run start --workspace server` |
+| Environment variable | `CLIENT_URL=https://your-vercel-app.vercel.app` |
+
+### Render server env
+
+| Variable | Purpose |
+| --- | --- |
+| `NODE_ENV=production` | Production mode |
+| `CLIENT_URL` | Allowed frontend origin |
+| `SUPABASE_URL` | Database connection |
+| `SUPABASE_SERVICE_ROLE_KEY` | Backend-only database access |
+| `IMAGEKIT_PUBLIC_KEY` | Media service config |
+| `IMAGEKIT_PRIVATE_KEY` | Media service config |
+| `IMAGEKIT_URL_ENDPOINT` | Media service config |
+| `CLEANUP_SECRET` | Protects manual cleanup endpoint |
+
+## Operational Notes
+
+| Behavior | Detail |
+| --- | --- |
+| Room expiry | Expired rooms are cleaned by a cron job every 15 minutes |
+| Termination | Creator termination deletes the room and cascades related data |
+| Message delete | Message row is removed and media cleanup is attempted for image or voice |
+| Leave room | Leave marks membership as left and does not hard-delete history |
+| Realtime recovery | Users must rejoin the socket room after session state changes |
+
+## Observability Checklist
+
+| Check | Expected result |
+| --- | --- |
+| `GET /api/health` | `status: ok` |
+| `GET /api/health/db` | `database: connected` |
+| Join room | Socket room attaches after membership is confirmed |
+| Expiry cleanup | Expired rooms disappear from `rooms`, `messages`, and `room_members` |
+
+## Security Notes
+
+| Topic | Detail |
+| --- | --- |
+| Encryption | The app does not provide full end-to-end encryption yet |
+| Server secrets | Supabase service role and ImageKit private key stay server-side only |
+| Validation | Request schemas are enforced with Zod |
+| Abuse control | Rate limiting is enabled for room creation, lookup, and uploads |
+
+## Limitations
+
+| Limitation | Detail |
+| --- | --- |
+| No full E2EE | Messages are not end-to-end encrypted today |
+| Free hosting sleep | Render free instances can sleep when idle |
+| Dependency on storage | Media files depend on ImageKit availability |
+
+## Roadmap
+
+| Priority | Candidate feature |
+| --- | --- |
+| High | Message reactions |
+| High | Reply and thread support |
+| High | Read receipts |
+| Medium | Search within room messages |
+| Medium | Media fullscreen preview |
+| Medium | Room pinning |
+| Medium | Voice playback speed controls |
+| Low | QR invite sharing |

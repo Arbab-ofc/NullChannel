@@ -7,6 +7,7 @@ import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
 import { useCountdown } from '../hooks/useCountdown';
 import { ThemeToggle } from '../components/common/ThemeToggle';
+import { LoadingSignal } from '../components/common/LoadingSignal';
 
 type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
@@ -27,18 +28,29 @@ export default function ChatPage() {
   const [senderName, setSenderName] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
+  const [pageState, setPageState] = useState<'loading' | 'ready' | 'missing'>('loading');
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const [joinBusy, setJoinBusy] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const [terminateBusy, setTerminateBusy] = useState(false);
   const [joinError, setJoinError] = useState('');
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
-    const res = await api.get(`/users/${senderId}/rooms`);
-    const rooms = res.data.data ?? [];
-    setMyRooms(rooms);
-    return rooms as Array<{ code: string; room_name?: string; room_type?: 'private' | 'group'; expires_at: string }>;
+    setRoomsLoading(true);
+    try {
+      const res = await api.get(`/users/${senderId}/rooms`);
+      const rooms = res.data.data ?? [];
+      setMyRooms(rooms);
+      return rooms as Array<{ code: string; room_name?: string; room_type?: 'private' | 'group'; expires_at: string }>;
+    } finally {
+      setRoomsLoading(false);
+    }
   }, [senderId]);
 
   useEffect(() => {
+    setPageState('loading');
+    setRoom(null);
     (async () => {
       const roomRes = await api.get(`/rooms/${code.toUpperCase()}`);
       const roomData = roomRes.data.data as Room;
@@ -56,8 +68,13 @@ export default function ChatPage() {
       const rooms = await loadMyRooms();
       const alreadyJoined = roomData.creator_id === senderId || rooms.some((r) => r.code === roomData.code);
       setIsJoined(alreadyJoined);
-    })().catch(() => setRoom(null));
-  }, [code, loadMyRooms]);
+      setPageState('ready');
+    })().catch(() => {
+      setRoom(null);
+      setPageState('missing');
+      setRoomsLoading(false);
+    });
+  }, [code, loadMyRooms, senderId]);
 
   useEffect(() => {
     if (!room) return;
@@ -89,6 +106,7 @@ export default function ChatPage() {
     socket.on('room-expired', () => {
       setIsJoined(false);
       setRoom(null);
+      setPageState('missing');
       loadMyRooms().catch(() => undefined);
       nav('/');
     });
@@ -149,19 +167,37 @@ export default function ChatPage() {
   };
 
   const leaveRoom = async () => {
-    if (!room || !isJoined) return;
-    socket.emit('leave-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
-    await api.post(`/rooms/${room.code}/leave`, { senderId }).catch(() => undefined);
-    setIsJoined(false);
-    await loadMyRooms();
+    if (!room || !isJoined || leaveBusy) return;
+    setLeaveBusy(true);
+    try {
+      socket.emit('leave-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
+      await api.post(`/rooms/${room.code}/leave`, { senderId }).catch(() => undefined);
+      setIsJoined(false);
+      await loadMyRooms();
+    } finally {
+      setLeaveBusy(false);
+    }
   };
 
   const terminateRoom = async () => {
-    if (!room) return;
-    await api.post(`/rooms/${room.code}/terminate`, { senderId });
-    await loadMyRooms();
-    nav('/');
+    if (!room || terminateBusy) return;
+    setTerminateBusy(true);
+    try {
+      await api.post(`/rooms/${room.code}/terminate`, { senderId });
+      await loadMyRooms();
+      nav('/');
+    } finally {
+      setTerminateBusy(false);
+    }
   };
+
+  if (pageState === 'loading') return <main className="grid min-h-screen place-items-center bg-bg p-6">
+    <div className="neo-panel loading-panel max-w-md p-8 text-center">
+      <p className="code-font text-xs tracking-[0.2em] text-cyan">SYNCING CHANNEL</p>
+      <h2 className="mt-2 text-2xl font-black uppercase">Loading secure room</h2>
+      <LoadingSignal label="Resolving room data" className="mt-5 justify-center text-sm uppercase tracking-[0.16em] text-muted" />
+    </div>
+  </main>;
 
   if (!room) return <main className="grid min-h-screen place-items-center bg-bg p-6">
     <div className="neo-panel max-w-md p-8 text-center">
@@ -184,6 +220,7 @@ export default function ChatPage() {
         />
         <Button
           className="mt-3 w-full"
+          disabled={joinBusy}
           onClick={() => {
             const value = nameInput.trim();
             if (value.length < 2) return;
@@ -192,7 +229,7 @@ export default function ChatPage() {
             setTimeout(() => joinCurrentRoom(), 0);
           }}
         >
-          Continue
+          {joinBusy ? <LoadingSignal label="Joining" /> : 'Continue'}
         </Button>
       </div>
     </div>}
@@ -211,16 +248,16 @@ export default function ChatPage() {
         </div>
         <div className="mt-4 hidden flex-wrap gap-2 xl:flex">
           {room.creator_id !== senderId && (
-            <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : joinCurrentRoom} disabled={joinBusy && !isJoined}>
+            <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : joinCurrentRoom} disabled={(joinBusy && !isJoined) || leaveBusy}>
               <DoorOpen className="mr-2 inline h-4 w-4" />
-              {isJoined ? 'Leave Room' : (joinBusy ? 'Joining...' : 'Join Room')}
+              {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
             </Button>
           )}
           <ThemeToggle />
           <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
           <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
           <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
-          {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
+          {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
           {isJoined && <span className="ml-auto inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>}
         </div>
         <div className="mt-4 flex items-center justify-between gap-2 xl:hidden">
@@ -247,15 +284,15 @@ export default function ChatPage() {
             <div className="grid gap-2">
               <ThemeToggle />
               {room.creator_id !== senderId && (
-                <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : joinCurrentRoom} disabled={joinBusy && !isJoined}>
+                <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : joinCurrentRoom} disabled={(joinBusy && !isJoined) || leaveBusy}>
                   <DoorOpen className="mr-2 inline h-4 w-4" />
-                  {isJoined ? 'Leave Room' : (joinBusy ? 'Joining...' : 'Join Room')}
+                  {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
                 </Button>
               )}
               <Button onClick={() => navigator.clipboard.writeText(room.code)}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
               <Button onClick={() => navigator.clipboard.writeText(window.location.href)}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
               <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
-              {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom}><Power className="mr-2 inline h-4 w-4" />Terminate</Button>}
+              {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
             </div>
           </aside>
         </>
@@ -300,9 +337,9 @@ export default function ChatPage() {
               }
             }}
           />
-        <label className="retro-upload-button neo-action inline-flex h-11 w-full cursor-pointer items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text md:w-auto">
+        <label className={`retro-upload-button neo-action inline-flex h-11 w-full items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text md:w-auto ${uploadingImage ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}>
           <ImagePlus className="mr-2 h-4 w-4" />
-          {uploadingImage ? 'Uploading' : 'Image'}
+          {uploadingImage ? <LoadingSignal label="Uploading" /> : 'Image'}
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -321,12 +358,16 @@ export default function ChatPage() {
     </section>
 
     <aside className="neo-panel order-2 h-fit min-w-0 p-3 sm:p-4 lg:order-2">
-      <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Rows2 className="h-4 w-4" />RECENT ACTIVE ROOMS</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Rows2 className="h-4 w-4" />RECENT ACTIVE ROOMS</p>
+        {roomsLoading && <LoadingSignal label="Syncing" className="code-font text-[10px] uppercase tracking-[0.14em] text-muted" />}
+      </div>
       <div className="mt-3 grid gap-4">
         <div>
           <p className="mb-2 text-[11px] font-semibold uppercase text-muted">Recent Private</p>
           <div className="flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1">
-            {myRooms.filter((r) => (r.room_type ?? 'private') === 'private').length === 0 && <p className="text-sm text-muted">No active private rooms.</p>}
+            {roomsLoading && <RoomLoadingRows />}
+            {!roomsLoading && myRooms.filter((r) => (r.room_type ?? 'private') === 'private').length === 0 && <p className="text-sm text-muted">No active private rooms.</p>}
             {myRooms.filter((r) => (r.room_type ?? 'private') === 'private').map((r) => (
               <button key={`p-${r.code}`} onClick={() => nav(`/chat/${r.code}`)} className={`neo-action w-[220px] shrink-0 border-2 px-3 py-2 text-left text-sm sm:w-full ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>
                 <p className="code-font tracking-widest">{r.code}</p>
@@ -338,7 +379,8 @@ export default function ChatPage() {
         <div>
           <p className="mb-2 text-[11px] font-semibold uppercase text-muted">Recent Groups</p>
           <div className="flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-1">
-            {myRooms.filter((r) => (r.room_type ?? 'private') === 'group').length === 0 && <p className="text-sm text-muted">No active groups.</p>}
+            {roomsLoading && <RoomLoadingRows />}
+            {!roomsLoading && myRooms.filter((r) => (r.room_type ?? 'private') === 'group').length === 0 && <p className="text-sm text-muted">No active groups.</p>}
             {myRooms.filter((r) => (r.room_type ?? 'private') === 'group').map((r) => (
               <button key={`g-${r.code}`} onClick={() => nav(`/chat/${r.code}`)} className={`neo-action w-[220px] shrink-0 border-2 px-3 py-2 text-left text-sm sm:w-full ${r.code === room.code ? 'border-cyan bg-cyan/10' : 'border-accent/60 bg-panel hover:border-cyan'}`}>
                 <p className="code-font tracking-widest">{r.code}</p>
@@ -351,3 +393,10 @@ export default function ChatPage() {
     </aside>
   </main>;
 }
+
+const RoomLoadingRows = () => (
+  <>
+    <div className="loading-row h-[58px] w-[220px] shrink-0 sm:w-full" />
+    <div className="loading-row h-[58px] w-[220px] shrink-0 sm:w-full" />
+  </>
+);

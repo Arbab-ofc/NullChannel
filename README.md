@@ -53,6 +53,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Participant list | Active members are shown in the chat sidebar. |
 | Copy feedback | Toasts for invite and room code copy actions. |
 | Message deletion | Users can delete their own messages, and tombstones show who deleted them. |
+| Message editing | Users can edit their own text messages for 2 minutes after sending. |
 | Room termination | Creator can terminate the room and trigger full cleanup. |
 | Expiry cleanup | Expired rooms are deleted by cron and via cleanup endpoint. |
 | Loading states | Skeletons and loading signals are used across the UI. |
@@ -78,6 +79,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `POST` | `/api/rooms` | Create a room |
 | `GET` | `/api/rooms/:code` | Fetch a room by code |
 | `GET` | `/api/rooms/:code/messages` | List room messages |
+| `PATCH` | `/api/rooms/:code/messages/:messageId` | Edit your own text message within 2 minutes |
 | `DELETE` | `/api/rooms/:code/messages/:messageId` | Delete a message |
 | `GET` | `/api/rooms/:code/participants` | List active participants |
 | `POST` | `/api/rooms/:code/leave` | Leave a room |
@@ -102,6 +104,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Client -> Server | `send-message` | Send a chat message payload |
 | Server -> Client | `receive-message` | Broadcast a new message |
 | Server -> Client | `user-typing` | Broadcast typing status |
+| Server -> Client | `message-edited` | Broadcast an edited message update |
 | Server -> Client | `message-deleted` | Broadcast a tombstone update |
 | Server -> Client | `user-joined` | Broadcast participant join |
 | Server -> Client | `user-left` | Broadcast participant leave |
@@ -243,6 +246,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | --- | --- |
 | Room expiry | Expired rooms are cleaned by a cron job every 15 minutes |
 | Termination | Creator termination deletes the room and cascades related data |
+| Message edit | Text messages can be edited by their sender for 2 minutes |
 | Message delete | Message row is removed and media cleanup is attempted for image or voice |
 | Leave room | Leave marks membership as left and does not hard-delete history |
 | Realtime recovery | Users must rejoin the socket room after session state changes |

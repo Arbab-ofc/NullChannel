@@ -12,9 +12,7 @@ Short-lived, real-time channels with no signup.
 
 NullChannel is a temporary chat system for private and group rooms. Users create or join an 8-character code, chat in real time, send image or voice media, and let the room expire on a timer with automatic cleanup.
 
-<div align="center">
-  <img src="./docs/built-by-arbab-arshad.svg" alt="Built and developed by Arbab Arshad" width="100%" />
-</div>
+![Built and developed by Arbab Arshad](docs/built-by-arbab-arshad.svg)
 
 ## Project Map
 
@@ -28,16 +26,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  A[Client: React + Vite] -->|REST| B[Express API]
-  A -->|Socket.io| C[Realtime Server]
-  B --> D[(Supabase PostgreSQL)]
-  C --> D
-  B --> E[ImageKit]
-  D --> F[Cleanup Job]
-  F --> E
-```
+![NullChannel architecture map](docs/architecture-map.svg)
 
 ## Product Snapshot
 
@@ -70,24 +59,7 @@ flowchart LR
 
 ## Message Flow
 
-```mermaid
-sequenceDiagram
-  participant U as User
-  participant C as Client
-  participant S as Server
-  participant DB as Supabase
-  participant M as ImageKit
-
-  U->>C: Type message or record voice
-  C->>S: POST /api/media/upload or socket send-message
-  alt Media upload
-    S->>M: Store file
-    M-->>S: fileUrl + fileId
-  end
-  S->>DB: Insert message row
-  S-->>C: Broadcast via Socket.io
-  C-->>U: Message appears in room
-```
+![NullChannel message flow map](docs/message-flow-map.svg)
 
 ## Data Model
 
@@ -96,6 +68,8 @@ sequenceDiagram
 | `rooms` | Room code, creator, type, room name, expiry timestamp |
 | `messages` | Text, image, and voice message records |
 | `room_members` | Membership, display name, join/leave state |
+
+![NullChannel database relationship graph](docs/data-model-graph.svg)
 
 ## API Surface
 
@@ -119,14 +93,6 @@ sequenceDiagram
 | `GET /api/health` | Service uptime and server status | Always available if app is running |
 | `GET /api/health/db` | Supabase connectivity check | Returns `200` when DB is reachable, `503` when not |
 
-```mermaid
-flowchart LR
-  A[GET /api/health] --> B[Server OK]
-  C[GET /api/health/db] --> D{Supabase reachable?}
-  D -- Yes --> E[200 OK]
-  D -- No --> F[503 Degraded]
-```
-
 ## Socket Events
 
 | Direction | Event | Purpose |
@@ -134,7 +100,7 @@ flowchart LR
 | Client -> Server | `join-room` | Join a socket room after membership is confirmed |
 | Client -> Server | `typing` | Send typing signal |
 | Client -> Server | `send-message` | Send a chat message payload |
-| Server -> Client | `new-message` | Broadcast a new message |
+| Server -> Client | `receive-message` | Broadcast a new message |
 | Server -> Client | `user-typing` | Broadcast typing status |
 | Server -> Client | `message-deleted` | Broadcast a tombstone update |
 | Server -> Client | `user-joined` | Broadcast participant join |
@@ -239,17 +205,6 @@ flowchart LR
 | Render | Backend deployment for `server` |
 | Supabase | Database |
 | ImageKit | Media storage |
-
-### Deployment flow
-
-```mermaid
-flowchart LR
-  A[GitHub Repo] --> B[Vercel: client]
-  A --> C[Render: server]
-  C --> D[Supabase]
-  C --> E[ImageKit]
-  B --> C
-```
 
 ### Vercel
 

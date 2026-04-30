@@ -1,0 +1,55 @@
+<svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">NullChannel message flow map</title>
+  <desc id="desc">A user sends a message, the client posts media or sends a socket message, the server stores records and broadcasts the update.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L10 5L0 10Z" fill="#21d4fd" />
+    </marker>
+    <style>
+      .bg { fill: #081018; }
+      .lane { stroke: #25384d; stroke-width: 2; stroke-dasharray: 8 8; }
+      .box { fill: #0f1d2d; stroke: #21d4fd; stroke-width: 2; }
+      .media { fill: #123226; stroke: #3ecf8e; stroke-width: 2; }
+      .title { fill: #f3f7fb; font: 700 24px Arial, sans-serif; }
+      .head { fill: #d7e2ec; font: 700 18px Arial, sans-serif; }
+      .text { fill: #d7e2ec; font: 600 16px Arial, sans-serif; }
+      .small { fill: #91a6b8; font: 500 14px Arial, sans-serif; }
+      .line { stroke: #21d4fd; stroke-width: 3; marker-end: url(#arrow); }
+      .green { stroke: #3ecf8e; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="620" rx="18" />
+  <text class="title" x="60" y="58">Message Flow Map</text>
+
+  <g>
+    <text class="head" x="135" y="105" text-anchor="middle">User</text>
+    <text class="head" x="375" y="105" text-anchor="middle">Client</text>
+    <text class="head" x="620" y="105" text-anchor="middle">Server</text>
+    <text class="head" x="865" y="105" text-anchor="middle">Database</text>
+    <text class="head" x="1065" y="105" text-anchor="middle">ImageKit</text>
+    <path class="lane" d="M135 125V560" />
+    <path class="lane" d="M375 125V560" />
+    <path class="lane" d="M620 125V560" />
+    <path class="lane" d="M865 125V560" />
+    <path class="lane" d="M1065 125V560" />
+  </g>
+
+  <rect class="box" x="70" y="145" width="610" height="54" rx="10" />
+  <text class="text" x="375" y="178" text-anchor="middle">User types a message, uploads an image, or records voice</text>
+
+  <path class="line" d="M375 230H620" />
+  <text class="small" x="498" y="220" text-anchor="middle">socket send-message or POST /api/media/upload</text>
+
+  <rect class="media" x="600" y="270" width="505" height="72" rx="10" />
+  <text class="text" x="852" y="302" text-anchor="middle">Media upload path</text>
+  <text class="small" x="852" y="326" text-anchor="middle">Server stores file and receives fileUrl + fileId</text>
+
+  <path class="green" d="M620 380H865" />
+  <text class="small" x="742" y="370" text-anchor="middle">insert message row</text>
+
+  <path class="line" d="M620 450H375" />
+  <text class="small" x="498" y="440" text-anchor="middle">broadcast via Socket.io</text>
+
+  <path class="line" d="M375 515H135" />
+  <text class="small" x="255" y="505" text-anchor="middle">message appears in room</text>
+</svg>

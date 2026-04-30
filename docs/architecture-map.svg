@@ -1,0 +1,56 @@
+<svg width="1200" height="520" viewBox="0 0 1200 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">NullChannel architecture map</title>
+  <desc id="desc">Client communicates with Express and Socket.io, both use Supabase, Express uses ImageKit, and cleanup removes expired media.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L10 5L0 10Z" fill="#21d4fd" />
+    </marker>
+    <style>
+      .bg { fill: #081018; }
+      .panel { fill: #0f1d2d; stroke: #25384d; stroke-width: 2; }
+      .accent { fill: #12293a; stroke: #21d4fd; stroke-width: 2; }
+      .data { fill: #123226; stroke: #3ecf8e; stroke-width: 2; }
+      .title { fill: #f3f7fb; font: 700 24px Arial, sans-serif; }
+      .text { fill: #d7e2ec; font: 600 20px Arial, sans-serif; }
+      .small { fill: #91a6b8; font: 500 15px Arial, sans-serif; }
+      .line { stroke: #21d4fd; stroke-width: 3; marker-end: url(#arrow); }
+      .green { stroke: #3ecf8e; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="520" rx="18" />
+  <text class="title" x="60" y="58">Architecture Map</text>
+
+  <rect class="accent" x="70" y="190" width="220" height="100" rx="12" />
+  <text class="text" x="180" y="232" text-anchor="middle">React + Vite</text>
+  <text class="small" x="180" y="260" text-anchor="middle">Client app</text>
+
+  <rect class="panel" x="430" y="105" width="220" height="100" rx="12" />
+  <text class="text" x="540" y="147" text-anchor="middle">Express API</text>
+  <text class="small" x="540" y="175" text-anchor="middle">REST endpoints</text>
+
+  <rect class="panel" x="430" y="310" width="220" height="100" rx="12" />
+  <text class="text" x="540" y="352" text-anchor="middle">Socket.io</text>
+  <text class="small" x="540" y="380" text-anchor="middle">Realtime server</text>
+
+  <rect class="data" x="800" y="190" width="230" height="100" rx="12" />
+  <text class="text" x="915" y="232" text-anchor="middle">Supabase</text>
+  <text class="small" x="915" y="260" text-anchor="middle">PostgreSQL data</text>
+
+  <rect class="data" x="800" y="60" width="230" height="90" rx="12" />
+  <text class="text" x="915" y="98" text-anchor="middle">ImageKit</text>
+  <text class="small" x="915" y="124" text-anchor="middle">Media storage</text>
+
+  <rect class="panel" x="800" y="365" width="230" height="90" rx="12" />
+  <text class="text" x="915" y="403" text-anchor="middle">Cleanup Job</text>
+  <text class="small" x="915" y="429" text-anchor="middle">Expiry removal</text>
+
+  <path class="line" d="M290 218C340 190 365 162 430 155" />
+  <text class="small" x="350" y="178" text-anchor="middle">REST</text>
+  <path class="line" d="M290 262C342 292 366 350 430 360" />
+  <text class="small" x="352" y="326" text-anchor="middle">Socket.io</text>
+  <path class="green" d="M650 155C715 160 735 210 800 230" />
+  <path class="green" d="M650 360C720 350 735 282 800 260" />
+  <path class="line" d="M650 130C710 116 738 106 800 105" />
+  <path class="green" d="M915 365V290" />
+  <path class="line" d="M915 365C920 300 925 215 915 150" />
+</svg>

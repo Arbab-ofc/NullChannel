@@ -1,0 +1,61 @@
+<svg width="1200" height="560" viewBox="0 0 1200 560" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">NullChannel database relationship graph</title>
+  <desc id="desc">The rooms table owns messages and room_members through room_id foreign keys. Messages store text, image, and voice records. Room members track active participants by left_at.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L10 5L0 10Z" fill="#3ecf8e" />
+    </marker>
+    <style>
+      .bg { fill: #081018; }
+      .table { fill: #0f1d2d; stroke: #21d4fd; stroke-width: 2; }
+      .table-green { fill: #123226; stroke: #3ecf8e; stroke-width: 2; }
+      .title { fill: #f3f7fb; font: 700 24px Arial, sans-serif; }
+      .head { fill: #f3f7fb; font: 700 22px Arial, sans-serif; }
+      .field { fill: #d7e2ec; font: 500 16px Arial, sans-serif; }
+      .muted { fill: #91a6b8; font: 500 14px Arial, sans-serif; }
+      .pk { fill: #21d4fd; font: 700 13px Arial, sans-serif; }
+      .fk { fill: #3ecf8e; font: 700 13px Arial, sans-serif; }
+      .line { stroke: #3ecf8e; stroke-width: 3; marker-end: url(#arrow); }
+      .note { fill: #12293a; stroke: #25384d; stroke-width: 2; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="560" rx="18" />
+  <text class="title" x="60" y="58">Database Relationship Graph</text>
+
+  <rect class="table-green" x="430" y="90" width="340" height="210" rx="12" />
+  <text class="head" x="600" y="128" text-anchor="middle">rooms</text>
+  <text class="pk" x="465" y="165">PK</text>
+  <text class="field" x="500" y="165">id uuid</text>
+  <text class="field" x="500" y="195">code varchar(8) unique</text>
+  <text class="field" x="500" y="225">creator_id text</text>
+  <text class="field" x="500" y="255">room_type private | group</text>
+  <text class="field" x="500" y="285">room_name, expires_at</text>
+
+  <rect class="table" x="80" y="340" width="370" height="170" rx="12" />
+  <text class="head" x="265" y="378" text-anchor="middle">messages</text>
+  <text class="pk" x="115" y="415">PK</text>
+  <text class="field" x="150" y="415">id uuid</text>
+  <text class="fk" x="115" y="445">FK</text>
+  <text class="field" x="150" y="445">room_id -> rooms.id</text>
+  <text class="field" x="150" y="475">sender_id, sender_name</text>
+  <text class="field" x="150" y="505">type, content, file_url, file_path</text>
+
+  <rect class="table" x="750" y="340" width="370" height="170" rx="12" />
+  <text class="head" x="935" y="378" text-anchor="middle">room_members</text>
+  <text class="pk" x="785" y="415">PK</text>
+  <text class="field" x="820" y="415">id uuid</text>
+  <text class="fk" x="785" y="445">FK</text>
+  <text class="field" x="820" y="445">room_id -> rooms.id</text>
+  <text class="field" x="820" y="475">sender_id, sender_name</text>
+  <text class="field" x="820" y="505">joined_at, left_at</text>
+
+  <path class="line" d="M500 300C430 330 365 350 335 340" />
+  <text class="muted" x="365" y="327" text-anchor="middle">on delete cascade</text>
+  <path class="line" d="M700 300C770 330 835 350 865 340" />
+  <text class="muted" x="835" y="327" text-anchor="middle">on delete cascade</text>
+
+  <rect class="note" x="435" y="360" width="330" height="105" rx="12" />
+  <text class="field" x="600" y="395" text-anchor="middle">Active participant rule</text>
+  <text class="muted" x="600" y="425" text-anchor="middle">room_members.left_at IS NULL</text>
+  <text class="muted" x="600" y="450" text-anchor="middle">Private rooms allow max 2 active members</text>
+</svg>

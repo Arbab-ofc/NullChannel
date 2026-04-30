@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2 } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -15,6 +15,8 @@ type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
 type Participant = { sender_id: string; sender_name: string; joined_at: string };
 
+const VOICE_MAX_MS = 2 * 60 * 1000;
+
 export default function ChatPage() {
   const { code = '' } = useParams();
   const nav = useNavigate();
@@ -27,6 +29,9 @@ export default function ChatPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingVoice, setUploadingVoice] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [deletingMessageIds, setDeletingMessageIds] = useState<Record<string, boolean>>({});
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [toast, setToast] = useState('');
@@ -46,6 +51,12 @@ export default function ChatPage() {
   const lastTypingAt = useRef(0);
   const redirectTimeout = useRef<number | null>(null);
   const toastTimeout = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<BlobPart[]>([]);
+  const recordingStartedAt = useRef(0);
+  const recordingInterval = useRef<number | null>(null);
+  const recordingLimitTimeout = useRef<number | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
   const loadMyRooms = useCallback(async () => {
@@ -73,6 +84,7 @@ export default function ChatPage() {
   }, []);
 
   const showExpiredPopup = useCallback(() => {
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
     setExpiredNotice(true);
     setIsJoined(false);
     setTypingUsers({});
@@ -121,6 +133,9 @@ export default function ChatPage() {
   useEffect(() => () => {
     if (redirectTimeout.current) window.clearTimeout(redirectTimeout.current);
     if (toastTimeout.current) window.clearTimeout(toastTimeout.current);
+    if (recordingInterval.current) window.clearInterval(recordingInterval.current);
+    if (recordingLimitTimeout.current) window.clearTimeout(recordingLimitTimeout.current);
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
   useEffect(() => {
@@ -285,6 +300,84 @@ export default function ChatPage() {
     }
   };
 
+  const emitVoiceMessage = async (blob: Blob) => {
+    if (!room || !isJoined || !senderName || blob.size === 0) return;
+    setUploadingVoice(true);
+    try {
+      const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' });
+      const form = new FormData();
+      form.append('file', file);
+      form.append('roomCode', room.code);
+      form.append('senderId', senderId);
+      form.append('type', 'voice');
+      const res = await api.post('/media/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      socket.emit('send-message', {
+        roomCode: room.code,
+        senderId,
+        senderName,
+        type: 'voice',
+        fileUrl: res.data.data.fileUrl,
+        filePath: res.data.data.fileId ?? res.data.data.filePath
+      });
+      showToast('Voice sent');
+    } catch {
+      showToast('Voice upload failed');
+    } finally {
+      setUploadingVoice(false);
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (!room || !isJoined || !senderName || recordingVoice || uploadingVoice) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      showToast('Voice recording unsupported');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      recordingStartedAt.current = Date.now();
+      setRecordingSeconds(0);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) voiceChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        voiceChunksRef.current = [];
+        setRecordingVoice(false);
+        setRecordingSeconds(0);
+        if (recordingInterval.current) window.clearInterval(recordingInterval.current);
+        if (recordingLimitTimeout.current) window.clearTimeout(recordingLimitTimeout.current);
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        emitVoiceMessage(blob).catch(() => undefined);
+      };
+
+      recorder.start();
+      setRecordingVoice(true);
+      recordingInterval.current = window.setInterval(() => {
+        setRecordingSeconds(Math.floor((Date.now() - recordingStartedAt.current) / 1000));
+      }, 500);
+      recordingLimitTimeout.current = window.setTimeout(stopVoiceRecording, VOICE_MAX_MS);
+    } catch {
+      showToast('Mic permission denied');
+    }
+  };
+
   const showToast = (message: string) => {
     setToast(message);
     if (toastTimeout.current) window.clearTimeout(toastTimeout.current);
@@ -321,6 +414,7 @@ export default function ChatPage() {
 
   const leaveRoom = async () => {
     if (!room || !isJoined || leaveBusy) return;
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
     setLeaveBusy(true);
     try {
       socket.emit('leave-room', { roomCode: room.code, senderId, senderName: senderName || undefined });
@@ -348,6 +442,7 @@ export default function ChatPage() {
 
   const typingNames = Object.values(typingUsers);
   const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
+  const recordingTime = `${Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:${(recordingSeconds % 60).toString().padStart(2, '0')}`;
 
   if (expiredNotice) return <main className="grid min-h-screen place-items-center bg-bg p-6">
     <div className="neo-panel loading-panel max-w-md p-8 text-center">
@@ -504,41 +599,60 @@ export default function ChatPage() {
       </section>
 
     <footer className="neo-panel sticky bottom-0 z-10 p-2.5 sm:p-3">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end">
-          <textarea
-            value={text}
-            onChange={(e) => handleTextChange(e.target.value)}
-            className="min-h-11 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60"
-            placeholder={isJoined ? 'Type a transmission' : 'Join this channel to send'}
-            disabled={!isJoined}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-          />
+      <div className="grid gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => handleTextChange(e.target.value)}
+          className="min-h-16 w-full resize-y border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60"
+          placeholder={isJoined ? 'Type a transmission' : 'Join this channel to send'}
+          disabled={!isJoined || recordingVoice}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        {recordingVoice && (
+          <div className="voice-recording-strip">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="voice-recording-dot" />
+              <span className="truncate">Recording voice transmission</span>
+            </div>
+            <span className="code-font text-punch">{recordingTime}</span>
+          </div>
+        )}
         {typingNames.length > 0 && (
           <div className="typing-indicator md:hidden">
             <LoadingSignal label={typingLabel} />
           </div>
         )}
-        <label className={`retro-upload-button neo-action inline-flex h-11 w-full items-center justify-center border-2 border-accent bg-panel px-4 text-sm font-semibold uppercase tracking-wider text-text md:w-auto ${uploadingImage ? 'cursor-wait opacity-70' : isJoined ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
-          <ImagePlus className="mr-2 h-4 w-4" />
-          {uploadingImage ? <LoadingSignal label="Uploading" /> : 'Image'}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            disabled={uploadingImage || !isJoined}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) sendImage(file).catch(() => undefined);
-              e.currentTarget.value = '';
-            }}
-          />
-        </label>
-        <Button className="h-11 w-full md:w-40" onClick={send} disabled={!isJoined}>Send</Button>
+        <div className="composer-actions">
+          <label className={`composer-action-button ${uploadingImage ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+            <ImagePlus className="h-4 w-4" />
+            <span>{uploadingImage ? 'Uploading' : 'Image'}</span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={uploadingImage || !isJoined || recordingVoice}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) sendImage(file).catch(() => undefined);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
+          <button
+            className={`composer-action-button ${recordingVoice ? 'is-recording' : ''}`}
+            onClick={recordingVoice ? stopVoiceRecording : startVoiceRecording}
+            disabled={!isJoined || uploadingVoice}
+          >
+            {recordingVoice ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            <span>{recordingVoice ? 'Stop' : uploadingVoice ? 'Sending voice' : 'Voice'}</span>
+          </button>
+          <Button className="h-11 w-full md:ml-auto md:w-36" onClick={send} disabled={!isJoined || recordingVoice}>Send</Button>
+        </div>
       </div>
       {typingNames.length > 0 && (
         <div className="typing-indicator mt-2 hidden md:inline-flex">

@@ -215,6 +215,75 @@ body {
   opacity: 0.5;
 }
 
+.composer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.composer-action-button {
+  display: inline-flex;
+  height: 2.75rem;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 2px solid hsl(var(--accent));
+  background: hsl(var(--panel));
+  box-shadow: 4px 4px 0 hsl(var(--shadow-offset));
+  color: hsl(var(--text));
+  padding: 0 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: box-shadow 140ms ease, filter 140ms ease, transform 140ms ease;
+}
+
+.composer-action-button:hover:not(:disabled) {
+  box-shadow: 5px 5px 0 hsl(var(--shadow-offset));
+  filter: brightness(1.04);
+}
+
+.composer-action-button:active:not(:disabled) {
+  box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  transform: translate(1px, 1px);
+}
+
+.composer-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+.composer-action-button.is-recording {
+  border-color: hsl(var(--punch));
+  color: hsl(var(--punch));
+}
+
+.voice-recording-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 2px solid hsl(var(--punch) / 0.7);
+  background: hsl(var(--punch) / 0.08);
+  color: hsl(var(--punch));
+  padding: 0.55rem 0.75rem;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.voice-recording-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: hsl(var(--punch));
+  animation: recording-pulse 900ms ease-in-out infinite;
+}
+
 @keyframes signal-rise {
   0%,
   100% {
@@ -224,6 +293,18 @@ body {
   50% {
     height: 12px;
     opacity: 1;
+  }
+}
+
+@keyframes recording-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
   }
 }
 
@@ -265,6 +346,18 @@ body {
   }
   .retro-upload-button:active {
     box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  }
+}
+
+@media (min-width: 768px) {
+  .composer-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .composer-action-button {
+    width: auto;
+    min-width: 7.5rem;
   }
 }
 

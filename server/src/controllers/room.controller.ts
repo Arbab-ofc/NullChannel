@@ -6,7 +6,7 @@ import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
 import { deleteMessageSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitMessageDeleted, emitRoomExpired } from '../sockets/emitter.js';
+import { emitMessageDeleted, emitRoomExpired, emitRoomExpiredByCode } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -100,6 +100,7 @@ export const terminateRoomController = async (req: Request, res: Response) => {
     return;
   }
   emitRoomExpired(result.roomId, { reason: 'terminated-by-creator' });
+  emitRoomExpiredByCode(result.code, { reason: 'terminated-by-creator' });
   res.json(successResponse(result));
 };
 

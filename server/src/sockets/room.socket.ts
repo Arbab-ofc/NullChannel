@@ -37,6 +37,7 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
       }
       await joinMembership(room.id, parsed.data.senderId, parsed.data.senderName);
       socket.join(room.id);
+      socket.join(`room-code:${room.code}`);
       socket.emit('room-joined', room);
       if (!alreadyActive) {
         socket.to(room.id).emit('user-joined', { senderId: parsed.data.senderId, senderName: parsed.data.senderName, roomCode: room.code });
@@ -112,6 +113,7 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
       if (!room) return;
       const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
       socket.leave(room.id);
+      socket.leave(`room-code:${room.code}`);
       await leaveMembership(room.id, parsed.data.senderId);
       socket.to(room.id).emit('user-left', { senderId: parsed.data.senderId, senderName: effectiveName, roomCode: room.code });
     } catch {

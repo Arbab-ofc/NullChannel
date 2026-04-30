@@ -14,6 +14,7 @@ type Room = { id: string; code: string; creator_id: string; room_type: 'private'
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
 type Participant = { sender_id: string; sender_name: string; joined_at: string };
+type RoomCloseReason = 'expired' | 'terminated-by-creator';
 
 const VOICE_MAX_MS = 2 * 60 * 1000;
 
@@ -47,6 +48,7 @@ export default function ChatPage() {
   const [joinError, setJoinError] = useState('');
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [expiredNotice, setExpiredNotice] = useState(false);
+  const [closeReason, setCloseReason] = useState<RoomCloseReason>('expired');
   const typingTimeouts = useRef<Record<string, number>>({});
   const lastTypingAt = useRef(0);
   const redirectTimeout = useRef<number | null>(null);
@@ -83,8 +85,9 @@ export default function ChatPage() {
     }
   }, []);
 
-  const showExpiredPopup = useCallback(() => {
+  const showExpiredPopup = useCallback((reason: RoomCloseReason = 'expired') => {
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+    setCloseReason(reason);
     setExpiredNotice(true);
     setIsJoined(false);
     setTypingUsers({});
@@ -222,11 +225,11 @@ export default function ChatPage() {
         });
       }, 1800);
     });
-    socket.on('room-expired', () => {
+    socket.on('room-expired', (payload: { reason?: RoomCloseReason } = {}) => {
       setIsJoined(false);
       setTypingUsers({});
       loadMyRooms().catch(() => undefined);
-      showExpiredPopup();
+      showExpiredPopup(payload.reason === 'terminated-by-creator' ? 'terminated-by-creator' : 'expired');
     });
 
     if ((isJoined || room.creator_id === senderId) && !!senderName) {
@@ -448,7 +451,7 @@ export default function ChatPage() {
     try {
       await api.post(`/rooms/${room.code}/terminate`, { senderId });
       await loadMyRooms();
-      nav('/');
+      showExpiredPopup('terminated-by-creator');
     } finally {
       setTerminateBusy(false);
     }
@@ -458,13 +461,26 @@ export default function ChatPage() {
   const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
   const recordingTime = `${Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:${(recordingSeconds % 60).toString().padStart(2, '0')}`;
   const deletedText = (message: Msg) => `${message.deleted_by === senderId ? 'You' : (message.deleted_by_name ?? 'A member')} deleted this transmission.`;
+  const closeCopy = closeReason === 'terminated-by-creator'
+    ? {
+      eyebrow: 'ROOM TERMINATED',
+      title: 'This channel was terminated',
+      body: 'The channel creator closed this room. You will be redirected home in 3 seconds.',
+      loading: 'Returning home'
+    }
+    : {
+      eyebrow: 'ROOM EXPIRED',
+      title: 'This channel has disappeared',
+      body: 'The room timer ended. You will be redirected home in 3 seconds.',
+      loading: 'Closing session'
+    };
 
   if (expiredNotice) return <main className="grid min-h-screen place-items-center bg-bg p-6">
     <div className="neo-panel loading-panel max-w-md p-8 text-center">
-      <p className="code-font text-xs tracking-[0.2em] text-punch">ROOM EXPIRED</p>
-      <h2 className="mt-2 text-2xl font-black uppercase">This channel has disappeared</h2>
-      <p className="mt-3 text-sm text-muted">You will be redirected home in 3 seconds.</p>
-      <LoadingSignal label="Closing session" className="mt-5 justify-center text-sm uppercase tracking-[0.16em] text-muted" />
+      <p className="code-font text-xs tracking-[0.2em] text-punch">{closeCopy.eyebrow}</p>
+      <h2 className="mt-2 text-2xl font-black uppercase">{closeCopy.title}</h2>
+      <p className="mt-3 text-sm text-muted">{closeCopy.body}</p>
+      <LoadingSignal label={closeCopy.loading} className="mt-5 justify-center text-sm uppercase tracking-[0.16em] text-muted" />
     </div>
   </main>;
 

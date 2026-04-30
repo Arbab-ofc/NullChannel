@@ -7,12 +7,25 @@
 [![Socket.io](https://img.shields.io/badge/Socket.io-4.x-010101?logo=socket.io&logoColor=white)](https://socket.io/)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![ImageKit](https://img.shields.io/badge/ImageKit-Media-1E88E5)](https://imagekit.io/)
+[![Live App](https://img.shields.io/badge/Live_App-Vercel-000000?logo=vercel&logoColor=white)](https://null-channel-client.vercel.app/)
+[![API](https://img.shields.io/badge/API-Render-46E3B7?logo=render&logoColor=000)](https://nullchannel.onrender.com/api/health)
+[![Health](https://img.shields.io/badge/Health_Check-/api/health-3ECF8E)](https://nullchannel.onrender.com/api/health)
 
 Short-lived, real-time channels with no signup.
 
 NullChannel is a temporary chat system for private and group rooms. Users create or join an 8-character code, chat in real time, send image or voice media, and let the room expire on a timer with automatic cleanup.
 
 ![Built and developed by Arbab Arshad](docs/built-by-arbab-arshad.svg)
+
+## Live Links
+
+| Link | URL |
+| --- | --- |
+| Live app | [https://null-channel-client.vercel.app](https://null-channel-client.vercel.app/) |
+| Backend API | [https://nullchannel.onrender.com](https://nullchannel.onrender.com/) |
+| Health check | [https://nullchannel.onrender.com/api/health](https://nullchannel.onrender.com/api/health) |
+| Database health | [https://nullchannel.onrender.com/api/health/db](https://nullchannel.onrender.com/api/health/db) |
+| Repository | [https://github.com/Arbab-ofc/NullChannel](https://github.com/Arbab-ofc/NullChannel) |
 
 ## Project Map
 
@@ -142,6 +155,31 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Supabase project | Required for database and authless storage layer |
 | ImageKit account | Required for image and voice uploads |
 
+## Clone This Project
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Arbab-ofc/NullChannel.git
+   ```
+2. Move into the project:
+   ```bash
+   cd NullChannel
+   ```
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+4. Create environment files:
+   ```bash
+   cp client/.env.example client/.env
+   cp server/.env.example server/.env
+   ```
+5. Add your Supabase, ImageKit, and API URL values.
+6. Start development:
+   ```bash
+   npm run dev
+   ```
+
 ## Environment Variables
 
 ### Client
@@ -213,10 +251,11 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Setting | Value |
 | --- | --- |
-| Root directory | `client` |
-| Build command | `npm run build` |
-| Output directory | `dist` |
-| Environment variable | `VITE_API_URL=https://your-render-service.onrender.com` |
+| Root directory | Repo root |
+| Config file | `vercel.json` |
+| Build command | `npm run build --workspace client` |
+| Output directory | `client/dist` |
+| Environment variable | `VITE_API_URL=https://nullchannel.onrender.com` |
 
 ### Render
 
@@ -239,6 +278,14 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `IMAGEKIT_PRIVATE_KEY` | Media service config |
 | `IMAGEKIT_URL_ENDPOINT` | Media service config |
 | `CLEANUP_SECRET` | Protects manual cleanup endpoint |
+
+## Contact
+
+| Platform | Link |
+| --- | --- |
+| GitHub | [Arbab-ofc](https://github.com/Arbab-ofc) |
+| Repository issues | [Open an issue](https://github.com/Arbab-ofc/NullChannel/issues) |
+| Live project | [NullChannel](https://null-channel-client.vercel.app/) |
 
 ## Operational Notes
 

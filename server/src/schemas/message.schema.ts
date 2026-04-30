@@ -6,6 +6,11 @@ export const deleteMessageSchema = z.object({
   senderId
 });
 
+export const editMessageSchema = z.object({
+  senderId,
+  content: z.string().trim().min(1).max(12000)
+});
+
 export const socketMessageSchema = z.object({
   roomCode: z.string().trim().length(8).regex(/^[A-Z0-9]+$/),
   senderId,

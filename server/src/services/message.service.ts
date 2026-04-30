@@ -58,13 +58,13 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
 export const getMessageById = async (messageId: string) => {
   let { data, error } = await supabase
     .from('messages')
-    .select('id, room_id, sender_id, sender_name, file_path')
+    .select('id, room_id, sender_id, sender_name, type, file_path, created_at')
     .eq('id', messageId)
     .maybeSingle();
   if (error?.message?.includes('sender_name') || error?.message?.includes('file_path')) {
     const fallback = await supabase
       .from('messages')
-      .select('id, room_id, sender_id')
+      .select('id, room_id, sender_id, type, created_at')
       .eq('id', messageId)
       .maybeSingle();
     data = fallback.data ? { ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}`, file_path: null } : null;
@@ -77,4 +77,25 @@ export const getMessageById = async (messageId: string) => {
 export const deleteMessageById = async (messageId: string) => {
   const { error } = await supabase.from('messages').delete().eq('id', messageId);
   if (error) throw error;
+};
+
+export const updateMessageContent = async (messageId: string, content: string) => {
+  let { data, error } = await supabase
+    .from('messages')
+    .update({ content })
+    .eq('id', messageId)
+    .select('id, room_id, sender_id, sender_name, type, content, file_url, file_path, created_at')
+    .single();
+  if (error?.message?.includes('sender_name')) {
+    const fallback = await supabase
+      .from('messages')
+      .update({ content })
+      .eq('id', messageId)
+      .select('id, room_id, sender_id, type, content, file_url, file_path, created_at')
+      .single();
+    data = fallback.data ? { ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}` } : null;
+    error = fallback.error;
+  }
+  if (error) throw error;
+  return data;
 };

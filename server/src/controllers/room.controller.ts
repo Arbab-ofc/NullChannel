@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
 import { createRoom, getRoomByCode, terminateRoom } from '../services/room.service.js';
-import { deleteMessageById, getMessageById, listMessages } from '../services/message.service.js';
+import { deleteMessageById, getMessageById, listMessages, updateMessageContent } from '../services/message.service.js';
 import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
-import { deleteMessageSchema } from '../schemas/message.schema.js';
+import { deleteMessageSchema, editMessageSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitMessageDeleted, emitRoomExpired, emitRoomExpiredByCode } from '../sockets/emitter.js';
+import { emitMessageDeleted, emitMessageEdited, emitRoomExpired, emitRoomExpiredByCode } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -81,6 +81,42 @@ export const deleteMessageController = async (req: Request, res: Response) => {
   const deletedByName = message.sender_name ?? `User-${message.sender_id.slice(0, 6)}`;
   emitMessageDeleted(room.id, { messageId: message.id, deletedBy: message.sender_id, deletedByName });
   res.json(successResponse({ deleted: true, messageId: message.id, deletedBy: message.sender_id, deletedByName }));
+};
+
+export const editMessageController = async (req: Request, res: Response) => {
+  const parsed = editMessageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId and content are required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const messageId = String(req.params.messageId ?? '');
+  const room = await getRoomByCode(code);
+  if (!room) {
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  const message = await getMessageById(messageId);
+  if (!message || message.room_id !== room.id) {
+    res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
+    return;
+  }
+  if (message.sender_id !== parsed.data.senderId) {
+    res.status(403).json(errorResponse('FORBIDDEN', 'You can edit only your own messages.'));
+    return;
+  }
+  if (message.type !== 'text') {
+    res.status(400).json(errorResponse('TEXT_ONLY', 'Only text messages can be edited.'));
+    return;
+  }
+  const createdAt = new Date(message.created_at).getTime();
+  if (!Number.isFinite(createdAt) || Date.now() - createdAt > 2 * 60 * 1000) {
+    res.status(403).json(errorResponse('EDIT_WINDOW_CLOSED', 'Messages can be edited for 2 minutes.'));
+    return;
+  }
+  const updated = await updateMessageContent(message.id, parsed.data.content);
+  emitMessageEdited(room.id, { messageId: message.id, content: parsed.data.content, editedBy: parsed.data.senderId });
+  res.json(successResponse({ ...updated, edited: true }));
 };
 
 export const terminateRoomController = async (req: Request, res: Response) => {

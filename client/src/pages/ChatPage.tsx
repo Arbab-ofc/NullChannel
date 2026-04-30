@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -9,7 +9,7 @@ import { useCountdown } from '../hooks/useCountdown';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
-type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string };
+type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
@@ -34,6 +34,9 @@ export default function ChatPage() {
   const [recordingVoice, setRecordingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [deletingMessageIds, setDeletingMessageIds] = useState<Record<string, boolean>>({});
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [editingBusy, setEditingBusy] = useState(false);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [toast, setToast] = useState('');
   const [nameInput, setNameInput] = useState('');
@@ -197,6 +200,14 @@ export default function ChatPage() {
         return next;
       });
     });
+    socket.on('message-edited', (payload: { messageId?: string; content?: string }) => {
+      if (!payload.messageId || typeof payload.content !== 'string') return;
+      setMessages((p) => p.map((message) => (message.id === payload.messageId ? {
+        ...message,
+        content: payload.content,
+        edited: true
+      } : message)));
+    });
     socket.on('user-left', (payload: { senderId?: string; senderName?: string }) => {
       if (payload?.senderId === senderId) return;
       const name = payload?.senderName ?? 'A user';
@@ -249,6 +260,7 @@ export default function ChatPage() {
       socket.off('user-joined');
       socket.off('user-typing');
       socket.off('message-deleted');
+      socket.off('message-edited');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
@@ -431,6 +443,39 @@ export default function ChatPage() {
         delete next[messageId];
         return next;
       });
+    }
+  };
+
+  const canEditMessage = (message: Msg) => {
+    if (!message.id || message.deleted || message.type !== 'text' || message.sender_id !== senderId || !message.created_at) return false;
+    return Date.now() - new Date(message.created_at).getTime() <= 2 * 60 * 1000;
+  };
+
+  const startEditMessage = (message: Msg) => {
+    if (!message.id || !canEditMessage(message)) return;
+    setEditingMessageId(message.id);
+    setEditingText(message.content ?? '');
+  };
+
+  const cancelEditMessage = () => {
+    setEditingMessageId(null);
+    setEditingText('');
+    setEditingBusy(false);
+  };
+
+  const saveEditedMessage = async () => {
+    if (!room || !editingMessageId || editingBusy) return;
+    const content = editingText.trim();
+    if (!content) return;
+    setEditingBusy(true);
+    try {
+      await api.patch(`/rooms/${room.code}/messages/${editingMessageId}`, { senderId, content });
+      setMessages((p) => p.map((message) => (message.id === editingMessageId ? { ...message, content, edited: true } : message)));
+      cancelEditMessage();
+      showToast('Message edited');
+    } catch {
+      showToast('Edit window closed');
+      setEditingBusy(false);
     }
   };
 
@@ -617,19 +662,47 @@ export default function ChatPage() {
           <div className="mb-1 flex items-center justify-between gap-2">
             <p className="text-[10px] uppercase tracking-wider text-muted">{m.deleted ? 'Message removed' : m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
             {!m.deleted && m.sender_id === senderId && m.id && (
-              <button
-                className="message-delete-button"
-                onClick={() => deleteMessage(m.id)}
-                disabled={!!deletingMessageIds[m.id]}
-                aria-label="Delete message"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>{deletingMessageIds[m.id] ? 'Deleting' : 'Delete'}</span>
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                {canEditMessage(m) && (
+                  <button
+                    className="message-delete-button"
+                    onClick={() => startEditMessage(m)}
+                    disabled={editingBusy}
+                    aria-label="Edit message"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
+                <button
+                  className="message-delete-button"
+                  onClick={() => deleteMessage(m.id)}
+                  disabled={!!deletingMessageIds[m.id]}
+                  aria-label="Delete message"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{deletingMessageIds[m.id] ? 'Deleting' : 'Delete'}</span>
+                </button>
+              </div>
             )}
           </div>
           {m.deleted && <p className="code-font text-xs uppercase tracking-[0.16em]">{deletedText(m)}</p>}
-          {!m.deleted && m.type === 'text' && <p className="whitespace-pre-wrap">{m.content}</p>}
+          {!m.deleted && m.type === 'text' && editingMessageId === m.id && (
+            <div className="grid gap-2">
+              <textarea
+                value={editingText}
+                onChange={(e) => setEditingText(e.target.value)}
+                className="min-h-20 w-full resize-none border-2 border-cyan bg-bg px-3 py-2 text-sm text-text outline-none"
+                maxLength={12000}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <button className="message-delete-button" onClick={cancelEditMessage} disabled={editingBusy}>Cancel</button>
+                <button className="message-delete-button" onClick={saveEditedMessage} disabled={editingBusy || !editingText.trim()}>{editingBusy ? 'Saving' : 'Save'}</button>
+              </div>
+            </div>
+          )}
+          {!m.deleted && m.type === 'text' && editingMessageId !== m.id && <p className="whitespace-pre-wrap">{m.content}{m.edited && <span className="ml-2 text-[10px] uppercase tracking-wider text-muted">(edited)</span>}</p>}
           {!m.deleted && m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
           {!m.deleted && m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
         </article>)}

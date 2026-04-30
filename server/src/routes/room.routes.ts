@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   createRoomController,
   deleteMessageController,
+  editMessageController,
   getMessagesController,
   getMyRoomsController,
   getRoomController,
@@ -16,6 +17,7 @@ const router = Router();
 router.post('/rooms', createRoomLimiter, asyncHandler(createRoomController));
 router.get('/rooms/:code', roomLookupLimiter, asyncHandler(getRoomController));
 router.get('/rooms/:code/messages', roomLookupLimiter, asyncHandler(getMessagesController));
+router.patch('/rooms/:code/messages/:messageId', asyncHandler(editMessageController));
 router.delete('/rooms/:code/messages/:messageId', asyncHandler(deleteMessageController));
 router.get('/rooms/:code/participants', roomLookupLimiter, asyncHandler(participantsController));
 router.post('/rooms/:code/terminate', asyncHandler(terminateRoomController));

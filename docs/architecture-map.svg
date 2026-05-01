@@ -1,6 +1,6 @@
 <svg width="1200" height="520" viewBox="0 0 1200 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">NullChannel architecture map</title>
-  <desc id="desc">Client communicates with Express and Socket.io, both use Supabase, Express uses ImageKit, and cleanup removes expired media.</desc>
+  <desc id="desc">Client communicates with Express and Socket.io, both use Supabase, Express uses ImageKit, and cleanup plus creator expiry extension keep rooms short-lived.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0L10 5L0 10Z" fill="#21d4fd" />

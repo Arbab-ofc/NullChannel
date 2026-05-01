@@ -1,6 +1,6 @@
 <svg width="1200" height="560" viewBox="0 0 1200 560" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">NullChannel database relationship graph</title>
-  <desc id="desc">The rooms table owns messages and room_members through room_id foreign keys. Messages store text, image, and voice records. Room members track active participants by left_at.</desc>
+  <desc id="desc">The rooms table owns messages and room_members through room_id foreign keys. Rooms also track whether their one-time expiry extension has been used. Messages store text, image, and voice records. Room members track active participants by left_at.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0L10 5L0 10Z" fill="#3ecf8e" />
@@ -22,14 +22,15 @@
   <rect class="bg" width="1200" height="560" rx="18" />
   <text class="title" x="60" y="58">Database Relationship Graph</text>
 
-  <rect class="table-green" x="430" y="90" width="340" height="210" rx="12" />
+  <rect class="table-green" x="430" y="90" width="340" height="240" rx="12" />
   <text class="head" x="600" y="128" text-anchor="middle">rooms</text>
   <text class="pk" x="465" y="165">PK</text>
   <text class="field" x="500" y="165">id uuid</text>
   <text class="field" x="500" y="195">code varchar(8) unique</text>
   <text class="field" x="500" y="225">creator_id text</text>
   <text class="field" x="500" y="255">room_type private | group</text>
-  <text class="field" x="500" y="285">room_name, expires_at</text>
+  <text class="field" x="500" y="285">room_name, expiry_extended</text>
+  <text class="field" x="500" y="315">expires_at</text>
 
   <rect class="table" x="80" y="340" width="370" height="170" rx="12" />
   <text class="head" x="265" y="378" text-anchor="middle">messages</text>

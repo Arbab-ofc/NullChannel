@@ -1,6 +1,6 @@
 <svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">NullChannel message flow map</title>
-  <desc id="desc">A user sends a message, the client posts media or sends a socket message, the server stores records and broadcasts the update.</desc>
+  <desc id="desc">A user sends a message or the room creator extends expiry. The client posts media or sends a socket message, the server stores records, updates expiry when needed, and broadcasts the result.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0L10 5L0 10Z" fill="#21d4fd" />
@@ -52,4 +52,9 @@
 
   <path class="line" d="M375 515H135" />
   <text class="small" x="255" y="505" text-anchor="middle">message appears in room</text>
+
+  <rect class="box" x="70" y="545" width="610" height="54" rx="10" />
+  <text class="text" x="375" y="578" text-anchor="middle">Room creator can extend expiry once with a custom duration</text>
+  <path class="line" d="M375 545H620" />
+  <text class="small" x="498" y="536" text-anchor="middle">POST /api/rooms/:code/extend</text>
 </svg>

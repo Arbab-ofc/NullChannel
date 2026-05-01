@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -706,6 +706,11 @@ export default function ChatPage() {
           {!m.deleted && m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
           {!m.deleted && m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
         </article>)}
+        {typingNames.length > 0 && (
+          <div className="typing-indicator mx-auto max-w-full">
+            <LoadingSignal label={typingLabel} />
+          </div>
+        )}
         <div ref={messagesEndRef} className="h-1" />
       </section>
 
@@ -733,15 +738,10 @@ export default function ChatPage() {
             <span className="code-font text-punch">{recordingTime}</span>
           </div>
         )}
-        {typingNames.length > 0 && (
-          <div className="typing-indicator md:hidden">
-            <LoadingSignal label={typingLabel} />
-          </div>
-        )}
         <div className="composer-actions">
-          <label className={`composer-action-button ${uploadingImage ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+          <label className={`composer-action-button composer-action-button--image ${uploadingImage ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
             <ImagePlus className="h-4 w-4" />
-            <span>{uploadingImage ? 'Uploading' : 'Image'}</span>
+            <span className="composer-label">{uploadingImage ? '[UP]' : '[IMG]'}</span>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -755,21 +755,19 @@ export default function ChatPage() {
             />
           </label>
           <button
-            className={`composer-action-button ${recordingVoice ? 'is-recording' : ''}`}
+            className={`composer-action-button composer-action-button--voice ${recordingVoice ? 'is-recording' : ''}`}
             onClick={recordingVoice ? stopVoiceRecording : startVoiceRecording}
             disabled={!isJoined || uploadingVoice}
           >
             {recordingVoice ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            <span>{recordingVoice ? 'Stop' : uploadingVoice ? 'Sending voice' : 'Voice'}</span>
+            <span className="composer-label">{recordingVoice ? '[STOP]' : uploadingVoice ? '[VOICE...]' : '[MIC]'}</span>
           </button>
-          <Button className="h-11 flex-1 md:ml-auto md:w-36 md:flex-none" onClick={send} disabled={!isJoined || recordingVoice}>Send</Button>
+          <Button className="composer-send-button" onClick={send} disabled={!isJoined || recordingVoice}>
+            <Send className="h-4 w-4" />
+            <span className="composer-label">[SEND]</span>
+          </Button>
         </div>
       </div>
-      {typingNames.length > 0 && (
-        <div className="typing-indicator mt-2 hidden md:inline-flex">
-          <LoadingSignal label={typingLabel} />
-        </div>
-      )}
     </footer>
     </section>
 

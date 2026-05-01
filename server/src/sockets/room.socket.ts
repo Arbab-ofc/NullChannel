@@ -85,6 +85,9 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
         content: parsed.data.content,
         fileUrl: parsed.data.fileUrl,
         filePath: parsed.data.filePath,
+        fileName: parsed.data.fileName,
+        fileSize: parsed.data.fileSize,
+        mimeType: parsed.data.mimeType,
         replyToMessageId: parsed.data.replyToMessageId
       });
 

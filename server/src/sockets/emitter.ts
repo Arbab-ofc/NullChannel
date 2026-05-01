@@ -32,3 +32,7 @@ export const emitMessageReactions = (
 export const emitRoomExtended = (roomId: string, payload: { code: string; expiresAt: string; extendByMinutes: number }) => {
   ioRef?.to(roomId).emit('room-extended', payload);
 };
+
+export const emitMessagePinned = (roomId: string, payload: { code: string; pinnedMessageId: string | null }) => {
+  ioRef?.to(roomId).emit('message-pinned', payload);
+};

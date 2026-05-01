@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset, Reply, SmilePlus, MoreVertical } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset, Reply, SmilePlus, MoreVertical, Paperclip, FileText, Download, Pin, PinOff, Images, ExternalLink } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -10,9 +10,10 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
 type ReactionSummary = { emoji: string; count: number; senders: Array<{ sender_id: string; sender_name: string }> };
-type ReplyPreview = { id: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string };
-type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
-type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string; expiry_extended?: boolean };
+type MessageType = 'text'|'image'|'voice'|'file';
+type ReplyPreview = { id: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_name?: string };
+type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_path?: string; file_name?: string; file_size?: number; mime_type?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
+type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string; expiry_extended?: boolean; pinned_message_id?: string | null };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
 type Participant = { sender_id: string; sender_name: string; joined_at: string };
@@ -33,6 +34,7 @@ export default function ChatPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadingVoice, setUploadingVoice] = useState(false);
   const [recordingVoice, setRecordingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -56,6 +58,7 @@ export default function ChatPage() {
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [terminateBusy, setTerminateBusy] = useState(false);
   const [extendBusy, setExtendBusy] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const [extendModalOpen, setExtendModalOpen] = useState(false);
   const [extendMinutes, setExtendMinutes] = useState('30');
   const [joinError, setJoinError] = useState('');
@@ -272,6 +275,11 @@ export default function ChatPage() {
       const minutes = payload.extendByMinutes ?? 0;
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: minutes > 0 ? `Room extended by ${minutes} min` : 'Room expiry extended' }]);
     });
+    socket.on('message-pinned', (payload: { code?: string; pinnedMessageId?: string | null } = {}) => {
+      if (payload.code !== room.code) return;
+      setRoom((current) => (current && current.code === room.code ? { ...current, pinned_message_id: payload.pinnedMessageId ?? null } : current));
+      setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: payload.pinnedMessageId ? 'Message pinned' : 'Pinned message cleared' }]);
+    });
 
     if ((isJoined || room.creator_id === senderId) && !!senderName) {
       socket.emit('join-room', { roomCode: room.code, senderId, senderName });
@@ -288,6 +296,7 @@ export default function ChatPage() {
       socket.off('message-edited');
       socket.off('message-reactions');
       socket.off('room-extended');
+      socket.off('message-pinned');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
@@ -361,6 +370,47 @@ export default function ChatPage() {
       setReplyingTo(null);
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const sendFile = async (file: File) => {
+    if (!room || !isJoined) return;
+    if (!senderName) return;
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('File limit is 15 MB');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('roomCode', room.code);
+      form.append('senderId', senderId);
+      form.append('type', 'file');
+      const res = await api.post('/media/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      socket.emit('send-message', {
+        roomCode: room.code,
+        senderId,
+        senderName: senderName || undefined,
+        type: 'file',
+        content: file.name,
+        fileUrl: res.data.data.fileUrl,
+        filePath: res.data.data.fileId ?? res.data.data.filePath,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        replyToMessageId: replyingTo?.id
+      });
+      setReplyingTo(null);
+      showToast('File sent');
+    } catch {
+      showToast('File upload failed');
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -489,7 +539,46 @@ export default function ChatPage() {
     if (!message) return 'Message unavailable';
     if (message.type === 'image') return 'Image transmission';
     if (message.type === 'voice') return 'Voice transmission';
+    if (message.type === 'file') return message.file_name || message.content || 'File attachment';
     return message.content || 'Text transmission';
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  };
+
+  const firstUrl = (value?: string) => value?.match(/https?:\/\/[^\s<>"']+/i)?.[0] ?? null;
+
+  const linkPreview = (value?: string) => {
+    const url = firstUrl(value);
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      return {
+        url,
+        host: parsed.hostname.replace(/^www\./, ''),
+        path: `${parsed.pathname}${parsed.search}`.replace(/\/$/, '') || '/'
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const pinMessage = async (messageId: string | null) => {
+    if (!room || room.creator_id !== senderId || pinBusy) return;
+    setPinBusy(true);
+    try {
+      const res = await api.patch(`/rooms/${room.code}/pin`, { senderId, messageId });
+      setRoom(res.data.data);
+      setMessageMenuId(null);
+      showToast(messageId ? 'Message pinned' : 'Pinned message cleared');
+    } catch {
+      showToast('Pin failed');
+    } finally {
+      setPinBusy(false);
+    }
   };
 
   const startReply = (message: Msg) => {
@@ -609,6 +698,8 @@ export default function ChatPage() {
   const recordingTime = `${Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:${(recordingSeconds % 60).toString().padStart(2, '0')}`;
   const deletedText = (message: Msg) => `${message.deleted_by === senderId ? 'You' : (message.deleted_by_name ?? 'A member')} deleted this transmission.`;
   const reactionTarget = reactionPickerMessageId ? messages.find((message) => message.id === reactionPickerMessageId) : null;
+  const pinnedMessage = room?.pinned_message_id ? messages.find((message) => message.id === room.pinned_message_id && !message.deleted) : null;
+  const imageMessages = messages.filter((message) => !message.deleted && message.type === 'image' && message.file_url);
   const closeCopy = closeReason === 'terminated-by-creator'
     ? {
       eyebrow: 'ROOM TERMINATED',
@@ -794,6 +885,23 @@ export default function ChatPage() {
         </>
       </header>
 
+      {pinnedMessage && (
+        <section className="pinned-message neo-panel">
+          <div className="flex min-w-0 items-center gap-2">
+            <Pin className="h-4 w-4 shrink-0 text-cyan" />
+            <div className="min-w-0">
+              <p className="pinned-message__label">Pinned message</p>
+              <p className="pinned-message__content">{quoteLabel(pinnedMessage)}</p>
+            </div>
+          </div>
+          {room.creator_id === senderId && (
+            <button className="pinned-message__clear" onClick={() => pinMessage(null)} disabled={pinBusy} type="button" aria-label="Unpin message">
+              <PinOff className="h-4 w-4" />
+            </button>
+          )}
+        </section>
+      )}
+
       <section className="chat-transcript neo-panel min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5">
         {!isJoined && room.creator_id !== senderId && (
           <div className="border-2 border-punch bg-panel px-3 py-2 text-xs uppercase tracking-wider text-muted">
@@ -831,6 +939,16 @@ export default function ChatPage() {
                       <button type="button" onClick={() => startReply(m)}>
                         <Reply className="h-3.5 w-3.5" />
                         <span>Reply</span>
+                      </button>
+                    )}
+                    {room.creator_id === senderId && (
+                      <button
+                        type="button"
+                        onClick={() => pinMessage(room.pinned_message_id === m.id ? null : m.id ?? null)}
+                        disabled={pinBusy}
+                      >
+                        {room.pinned_message_id === m.id ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                        <span>{room.pinned_message_id === m.id ? 'Unpin' : 'Pin'}</span>
                       </button>
                     )}
                     {isJoined && (
@@ -892,9 +1010,32 @@ export default function ChatPage() {
               </div>
             </div>
           )}
-          {!m.deleted && m.type === 'text' && editingMessageId !== m.id && <p className="whitespace-pre-wrap">{m.content}{m.edited && <span className="ml-2 text-[10px] uppercase tracking-wider text-muted">(edited)</span>}</p>}
+          {!m.deleted && m.type === 'text' && editingMessageId !== m.id && (
+            <>
+              <p className="whitespace-pre-wrap">{m.content}{m.edited && <span className="ml-2 text-[10px] uppercase tracking-wider text-muted">(edited)</span>}</p>
+              {linkPreview(m.content) && (
+                <a className="link-preview" href={linkPreview(m.content)?.url} target="_blank" rel="noreferrer">
+                  <div className="link-preview__icon"><ExternalLink className="h-4 w-4" /></div>
+                  <div className="min-w-0">
+                    <p className="link-preview__host">{linkPreview(m.content)?.host}</p>
+                    <p className="link-preview__path">{linkPreview(m.content)?.path}</p>
+                  </div>
+                </a>
+              )}
+            </>
+          )}
           {!m.deleted && m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
           {!m.deleted && m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
+          {!m.deleted && m.type === 'file' && m.file_url && (
+            <a className="file-message" href={m.file_url} target="_blank" rel="noreferrer">
+              <FileText className="h-5 w-5 shrink-0 text-cyan" />
+              <div className="min-w-0 flex-1">
+                <p className="file-message__name">{m.file_name ?? m.content ?? 'Attachment'}</p>
+                <p className="file-message__meta">{[formatFileSize(m.file_size), m.mime_type].filter(Boolean).join(' / ') || 'Download file'}</p>
+              </div>
+              <Download className="h-4 w-4 shrink-0 text-muted" />
+            </a>
+          )}
           {!m.deleted && !!m.reactions?.length && (
             <div className="message-reactions">
               {m.reactions.map((reaction) => {
@@ -1003,6 +1144,21 @@ export default function ChatPage() {
               }}
             />
           </label>
+          <label className={`composer-action-button composer-action-button--file ${uploadingFile || !isJoined || recordingVoice ? 'composer-control-disabled' : ''} ${uploadingFile ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+            <Paperclip className="h-4 w-4" />
+            <span className="composer-label">{uploadingFile ? '[FILE...]' : '[FILE]'}</span>
+            <input
+              type="file"
+              accept=".pdf,.txt,.csv,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+              className="hidden"
+              disabled={uploadingFile || !isJoined || recordingVoice}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) sendFile(file).catch(() => undefined);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
           <button
             className={`composer-action-button composer-action-button--voice ${recordingVoice ? 'is-recording' : ''}`}
             onClick={recordingVoice ? stopVoiceRecording : startVoiceRecording}
@@ -1034,6 +1190,20 @@ export default function ChatPage() {
               <p className="font-semibold uppercase">{participant.sender_id === senderId ? `${participant.sender_name} (You)` : participant.sender_name}</p>
               <p className="code-font mt-1 text-[10px] uppercase tracking-[0.14em] text-muted">{participant.sender_id === room.creator_id ? 'Creator' : 'Member'}</p>
             </div>
+          ))}
+        </div>
+      </div>
+      <div className="mb-5 border-b-2 border-accent/40 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Images className="h-4 w-4" />IMAGE GALLERY</p>
+          <span className="border border-cyan px-2 py-1 text-[10px] uppercase tracking-wider text-muted">{imageMessages.length} Images</span>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {imageMessages.length === 0 && <p className="col-span-3 text-sm text-muted">No shared images yet.</p>}
+          {imageMessages.slice(-9).reverse().map((message) => (
+            <a key={`gallery-${message.id}`} href={message.file_url} target="_blank" rel="noreferrer" className="gallery-thumb">
+              <img src={message.file_url} alt={message.content ?? 'Shared image'} />
+            </a>
           ))}
         </div>
       </div>

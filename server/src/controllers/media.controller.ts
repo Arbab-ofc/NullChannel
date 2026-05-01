@@ -8,6 +8,20 @@ import { errorResponse, successResponse } from '../utils/apiResponse.js';
 
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream'];
 const voiceTypes = ['audio/webm', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'application/octet-stream'];
+const fileTypes = [
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/octet-stream'
+];
 
 export const uploadMediaController = async (req: Request, res: Response) => {
   const parsed = mediaBodySchema.safeParse(req.body);
@@ -28,9 +42,8 @@ export const uploadMediaController = async (req: Request, res: Response) => {
     return;
   }
 
-  const isImage = parsed.data.type === 'image';
-  const allowed = isImage ? imageTypes : voiceTypes;
-  const max = isImage ? LIMITS.IMAGE_MAX_BYTES : LIMITS.VOICE_MAX_BYTES;
+  const allowed = parsed.data.type === 'image' ? imageTypes : parsed.data.type === 'voice' ? voiceTypes : fileTypes;
+  const max = parsed.data.type === 'image' ? LIMITS.IMAGE_MAX_BYTES : parsed.data.type === 'voice' ? LIMITS.VOICE_MAX_BYTES : LIMITS.FILE_MAX_BYTES;
 
   if (!allowed.includes(req.file.mimetype) || req.file.size > max) {
     res.status(400).json(errorResponse('INVALID_MEDIA', 'Invalid media format or size.'));

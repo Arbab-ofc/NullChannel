@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
-import { createRoom, extendRoomExpiry, getRoomByCode, terminateRoom } from '../services/room.service.js';
+import { createRoom, extendRoomExpiry, getRoomByCode, pinRoomMessage, terminateRoom } from '../services/room.service.js';
 import { deleteMessageById, getMessageById, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
 import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
-import { createRoomSchema, extendRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
+import { createRoomSchema, extendRoomSchema, pinMessageSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
 import { deleteMessageSchema, editMessageSchema, reactionSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitMessageDeleted, emitMessageEdited, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended } from '../sockets/emitter.js';
+import { emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -66,19 +66,23 @@ export const deleteMessageController = async (req: Request, res: Response) => {
     res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
     return;
   }
+  if (message.deleted) {
+    res.status(409).json(errorResponse('MESSAGE_ALREADY_DELETED', 'Message is already deleted.'));
+    return;
+  }
   if (message.sender_id !== parsed.data.senderId) {
     res.status(403).json(errorResponse('FORBIDDEN', 'You can delete only your own messages.'));
     return;
   }
+  const deletedByName = message.sender_name ?? `User-${message.sender_id.slice(0, 6)}`;
   if (message.file_path) {
     try {
       await deleteMediaByFileId(message.file_path);
     } catch {
-      // Media deletion is best-effort; the database message should still be removed.
+      // Media deletion is best-effort; the tombstone should still be persisted.
     }
   }
-  await deleteMessageById(message.id);
-  const deletedByName = message.sender_name ?? `User-${message.sender_id.slice(0, 6)}`;
+  await deleteMessageById(message.id, message.sender_id, deletedByName);
   emitMessageDeleted(room.id, { messageId: message.id, deletedBy: message.sender_id, deletedByName });
   res.json(successResponse({ deleted: true, messageId: message.id, deletedBy: message.sender_id, deletedByName }));
 };
@@ -99,6 +103,10 @@ export const editMessageController = async (req: Request, res: Response) => {
   const message = await getMessageById(messageId);
   if (!message || message.room_id !== room.id) {
     res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
+    return;
+  }
+  if (message.deleted) {
+    res.status(409).json(errorResponse('MESSAGE_DELETED', 'Deleted messages cannot be edited.'));
     return;
   }
   if (message.sender_id !== parsed.data.senderId) {
@@ -140,6 +148,39 @@ export const reactToMessageController = async (req: Request, res: Response) => {
   const reactions = await toggleMessageReaction(message.id, parsed.data.senderId, parsed.data.senderName, parsed.data.emoji);
   emitMessageReactions(room.id, { messageId: message.id, reactions });
   res.json(successResponse({ messageId: message.id, reactions }));
+};
+
+export const pinMessageController = async (req: Request, res: Response) => {
+  const parsed = pinMessageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const room = await getRoomByCode(code);
+  if (!room) {
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  const messageId = parsed.data.messageId ?? null;
+  if (messageId) {
+    const message = await getMessageById(messageId);
+    if (!message || message.room_id !== room.id) {
+      res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
+      return;
+    }
+  }
+  const result = await pinRoomMessage(code, parsed.data.senderId, messageId);
+  if ('error' in result) {
+    if (result.error === 'FORBIDDEN') {
+      res.status(403).json(errorResponse('FORBIDDEN', 'Only room creator can pin messages.'));
+      return;
+    }
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  emitMessagePinned(result.room.id, { code: result.room.code, pinnedMessageId: result.pinnedMessageId });
+  res.json(successResponse(result.room));
 };
 
 export const terminateRoomController = async (req: Request, res: Response) => {

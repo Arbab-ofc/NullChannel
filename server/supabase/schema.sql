@@ -16,19 +16,30 @@ create table if not exists messages (
   room_id uuid not null references rooms(id) on delete cascade,
   sender_id text not null,
   sender_name text not null,
-  type text not null check (type in ('text','image','voice')),
+  type text not null check (type in ('text','image','voice','file')),
   content text,
   file_url text,
   file_path text,
+  file_name text,
+  file_size integer,
+  mime_type text,
   reply_to_message_id uuid references messages(id) on delete set null,
+  deleted boolean not null default false,
+  deleted_by text,
+  deleted_by_name text,
+  deleted_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table rooms
+  add column if not exists pinned_message_id uuid references messages(id) on delete set null;
 
 create index if not exists idx_rooms_code on rooms(code);
 create index if not exists idx_rooms_expires_at on rooms(expires_at);
 create index if not exists idx_messages_room_id on messages(room_id);
 create index if not exists idx_messages_created_at on messages(created_at);
 create index if not exists idx_messages_reply_to_message_id on messages(reply_to_message_id);
+create index if not exists idx_rooms_pinned_message_id on rooms(pinned_message_id);
 
 create table if not exists message_reactions (
   id uuid primary key default gen_random_uuid(),

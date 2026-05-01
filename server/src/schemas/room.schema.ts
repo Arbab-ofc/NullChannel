@@ -21,6 +21,11 @@ export const extendRoomSchema = z.object({
   extendByMinutes: z.coerce.number().int().min(5).max(1440)
 });
 
+export const pinMessageSchema = z.object({
+  senderId: z.string().uuid(),
+  messageId: z.string().uuid().nullable().optional()
+});
+
 export const senderParamSchema = z.object({
   senderId: z.string().uuid()
 });

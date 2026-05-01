@@ -2,6 +2,7 @@ export const LIMITS = {
   TEXT_MAX: 2000,
   IMAGE_MAX_BYTES: 5 * 1024 * 1024,
   VOICE_MAX_BYTES: 10 * 1024 * 1024,
+  FILE_MAX_BYTES: 15 * 1024 * 1024,
   VOICE_MAX_MS: 2 * 60 * 1000,
   CODE_LENGTH: 8
 } as const;

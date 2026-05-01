@@ -1,4 +1,4 @@
-export type MessageType = 'text' | 'image' | 'voice';
+export type MessageType = 'text' | 'image' | 'voice' | 'file';
 
 export interface MessagePayload {
   roomCode: string;
@@ -8,5 +8,8 @@ export interface MessagePayload {
   content?: string;
   fileUrl?: string;
   filePath?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
   replyToMessageId?: string;
 }

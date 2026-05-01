@@ -22,6 +22,13 @@ export const emitMessageEdited = (roomId: string, payload: { messageId: string; 
   ioRef?.to(roomId).emit('message-edited', payload);
 };
 
+export const emitMessageReactions = (
+  roomId: string,
+  payload: { messageId: string; reactions: Array<{ emoji: string; count: number; senders: Array<{ sender_id: string; sender_name: string }> }> }
+) => {
+  ioRef?.to(roomId).emit('message-reactions', payload);
+};
+
 export const emitRoomExtended = (roomId: string, payload: { code: string; expiresAt: string; extendByMinutes: number }) => {
   ioRef?.to(roomId).emit('room-extended', payload);
 };

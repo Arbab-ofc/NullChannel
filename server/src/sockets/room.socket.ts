@@ -2,7 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import { socketMessageSchema } from '../schemas/message.schema.js';
 import { getRoomByCode } from '../services/room.service.js';
-import { saveMessage } from '../services/message.service.js';
+import { getMessageById, saveMessage } from '../services/message.service.js';
 import { countActiveMembers, isActiveMember, joinMembership, leaveMembership } from '../services/membership.service.js';
 
 const joinSchema = z.object({ roomCode: z.string().length(8), senderId: z.string().uuid(), senderName: z.string().trim().min(2).max(24) });
@@ -70,6 +70,12 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
         return socket.emit('socket-error', { code: 'NAME_REQUIRED', message: 'Display name is required for this room.' });
       }
       const effectiveName = parsed.data.senderName ?? `User-${parsed.data.senderId.slice(0, 6)}`;
+      if (parsed.data.replyToMessageId) {
+        const replyTo = await getMessageById(parsed.data.replyToMessageId);
+        if (!replyTo || replyTo.room_id !== room.id) {
+          return socket.emit('socket-error', { code: 'REPLY_NOT_FOUND', message: 'Quoted message was not found.' });
+        }
+      }
 
       const message = await saveMessage(room.id, {
         roomCode: parsed.data.roomCode,
@@ -78,7 +84,8 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
         type: parsed.data.type,
         content: parsed.data.content,
         fileUrl: parsed.data.fileUrl,
-        filePath: parsed.data.filePath
+        filePath: parsed.data.filePath,
+        replyToMessageId: parsed.data.replyToMessageId
       });
 
       io.to(room.id).emit('receive-message', message);

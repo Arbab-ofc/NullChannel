@@ -62,6 +62,8 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Expiry controls          | Custom duration on create, one-time creator extension.                        |
 | Real-time chat          | Socket.io broadcast for messages, typing, delete events, join/leave, expiry. |
 | Text, image, voice      | Media upload is supported through the backend and ImageKit.                  |
+| Quoted replies          | Messages can quote an earlier text, image, or voice transmission.            |
+| Message reactions       | Members can toggle quick emoji reactions with live count updates.            |
 | Typing indicator        | Live typing state with timeout cleanup.                                      |
 | Participant list        | Active members are shown in the chat sidebar.                                |
 | Copy feedback           | Toasts for invite and room code copy actions.                                |
@@ -81,7 +83,8 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Table            | Purpose                                               |
 | ---------------- | ----------------------------------------------------- |
 | `rooms`        | Room code, creator, type, room name, expiry timestamp, one-time extension flag |
-| `messages`     | Text, image, and voice message records                |
+| `messages`     | Text, image, voice, and quoted-reply message records  |
+| `message_reactions` | Per-user emoji reactions for each message       |
 | `room_members` | Membership, display name, join/leave state            |
 
 ![NullChannel database relationship graph](docs/data-model-graph.svg)
@@ -95,6 +98,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `GET`    | `/api/rooms/:code/messages`            | List room messages                          |
 | `POST`   | `/api/rooms/:code/extend`              | Extend expiry once with a custom duration   |
 | `PATCH`  | `/api/rooms/:code/messages/:messageId` | Edit your own text message within 2 minutes |
+| `POST`   | `/api/rooms/:code/messages/:messageId/reactions` | Toggle an emoji reaction on a message |
 | `DELETE` | `/api/rooms/:code/messages/:messageId` | Delete a message                            |
 | `GET`    | `/api/rooms/:code/participants`        | List active participants                    |
 | `POST`   | `/api/rooms/:code/leave`               | Leave a room                                |
@@ -120,6 +124,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Server -> Client | `receive-message` | Broadcast a new message                          |
 | Server -> Client | `user-typing`     | Broadcast typing status                          |
 | Server -> Client | `message-edited`  | Broadcast an edited message update               |
+| Server -> Client | `message-reactions` | Broadcast reaction count updates              |
 | Server -> Client | `message-deleted` | Broadcast a tombstone update                     |
 | Server -> Client | `room-extended`   | Broadcast expiry updates after creator extension |
 | Server -> Client | `user-joined`     | Broadcast participant join                       |
@@ -163,6 +168,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `v4` | Add private and group room modes |
 | `v5` | Require room names |
 | `v6` | Add one-time custom expiry extension |
+| `v7` | Add quoted replies and message reactions |
 
 ## Prerequisites
 

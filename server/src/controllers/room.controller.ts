@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
 import { createRoom, extendRoomExpiry, getRoomByCode, terminateRoom } from '../services/room.service.js';
-import { deleteMessageById, getMessageById, listMessages, updateMessageContent } from '../services/message.service.js';
+import { deleteMessageById, getMessageById, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
 import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, extendRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
-import { deleteMessageSchema, editMessageSchema } from '../schemas/message.schema.js';
+import { deleteMessageSchema, editMessageSchema, reactionSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitMessageDeleted, emitMessageEdited, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended } from '../sockets/emitter.js';
+import { emitMessageDeleted, emitMessageEdited, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -117,6 +117,29 @@ export const editMessageController = async (req: Request, res: Response) => {
   const updated = await updateMessageContent(message.id, parsed.data.content);
   emitMessageEdited(room.id, { messageId: message.id, content: parsed.data.content, editedBy: parsed.data.senderId });
   res.json(successResponse({ ...updated, edited: true }));
+};
+
+export const reactToMessageController = async (req: Request, res: Response) => {
+  const parsed = reactionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId, senderName and emoji are required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const messageId = String(req.params.messageId ?? '');
+  const room = await getRoomByCode(code);
+  if (!room) {
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  const message = await getMessageById(messageId);
+  if (!message || message.room_id !== room.id) {
+    res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
+    return;
+  }
+  const reactions = await toggleMessageReaction(message.id, parsed.data.senderId, parsed.data.senderName, parsed.data.emoji);
+  emitMessageReactions(room.id, { messageId: message.id, reactions });
+  res.json(successResponse({ messageId: message.id, reactions }));
 };
 
 export const terminateRoomController = async (req: Request, res: Response) => {

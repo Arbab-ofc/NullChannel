@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset, Reply, SmilePlus, MoreVertical } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -9,7 +9,9 @@ import { useCountdown } from '../hooks/useCountdown';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
-type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
+type ReactionSummary = { emoji: string; count: number; senders: Array<{ sender_id: string; sender_name: string }> };
+type ReplyPreview = { id: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string };
+type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string; expiry_extended?: boolean };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
@@ -17,6 +19,7 @@ type Participant = { sender_id: string; sender_name: string; joined_at: string }
 type RoomCloseReason = 'expired' | 'terminated-by-creator';
 
 const VOICE_MAX_MS = 2 * 60 * 1000;
+const REACTION_EMOJIS = ['👍', '😂', '🔥', '❤️', '👀'];
 
 export default function ChatPage() {
   const { code = '' } = useParams();
@@ -37,6 +40,10 @@ export default function ChatPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [editingBusy, setEditingBusy] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Msg | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
+  const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
+  const [reactionBusyIds, setReactionBusyIds] = useState<Record<string, boolean>>({});
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [toast, setToast] = useState('');
   const [nameInput, setNameInput] = useState('');
@@ -211,6 +218,13 @@ export default function ChatPage() {
         edited: true
       } : message)));
     });
+    socket.on('message-reactions', (payload: { messageId?: string; reactions?: ReactionSummary[] }) => {
+      if (!payload.messageId || !Array.isArray(payload.reactions)) return;
+      setMessages((p) => p.map((message) => (message.id === payload.messageId ? {
+        ...message,
+        reactions: payload.reactions
+      } : message)));
+    });
     socket.on('user-left', (payload: { senderId?: string; senderName?: string }) => {
       if (payload?.senderId === senderId) return;
       const name = payload?.senderName ?? 'A user';
@@ -272,6 +286,7 @@ export default function ChatPage() {
       socket.off('user-typing');
       socket.off('message-deleted');
       socket.off('message-edited');
+      socket.off('message-reactions');
       socket.off('room-extended');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
@@ -295,8 +310,16 @@ export default function ChatPage() {
   const send = () => {
     if (!room || !text.trim() || !isJoined) return;
     if (!senderName) return;
-    socket.emit('send-message', { roomCode: room.code, senderId, senderName: senderName || undefined, type: 'text', content: text.trim() });
+    socket.emit('send-message', {
+      roomCode: room.code,
+      senderId,
+      senderName: senderName || undefined,
+      type: 'text',
+      content: text.trim(),
+      replyToMessageId: replyingTo?.id
+    });
     setText('');
+    setReplyingTo(null);
   };
 
   const handleTextChange = (value: string) => {
@@ -332,8 +355,10 @@ export default function ChatPage() {
         senderName: senderName || undefined,
         type: 'image',
         fileUrl: res.data.data.fileUrl,
-        filePath: res.data.data.fileId ?? res.data.data.filePath
+        filePath: res.data.data.fileId ?? res.data.data.filePath,
+        replyToMessageId: replyingTo?.id
       });
+      setReplyingTo(null);
     } finally {
       setUploadingImage(false);
     }
@@ -359,8 +384,10 @@ export default function ChatPage() {
         senderName,
         type: 'voice',
         fileUrl: res.data.data.fileUrl,
-        filePath: res.data.data.fileId ?? res.data.data.filePath
+        filePath: res.data.data.fileId ?? res.data.data.filePath,
+        replyToMessageId: replyingTo?.id
       });
+      setReplyingTo(null);
       showToast('Voice sent');
     } catch {
       showToast('Voice upload failed');
@@ -458,6 +485,41 @@ export default function ChatPage() {
     }
   };
 
+  const quoteLabel = (message?: ReplyPreview | Msg | null) => {
+    if (!message) return 'Message unavailable';
+    if (message.type === 'image') return 'Image transmission';
+    if (message.type === 'voice') return 'Voice transmission';
+    return message.content || 'Text transmission';
+  };
+
+  const startReply = (message: Msg) => {
+    if (!message.id || message.deleted || !isJoined) return;
+    setReplyingTo(message);
+    setMessageMenuId(null);
+  };
+
+  const toggleReaction = async (message: Msg, emoji: string) => {
+    if (!room || !message.id || !isJoined || !senderName || message.deleted) return;
+    const key = `${message.id}:${emoji}`;
+    if (reactionBusyIds[key]) return;
+    setReactionBusyIds((p) => ({ ...p, [key]: true }));
+    try {
+      const res = await api.post(`/rooms/${room.code}/messages/${message.id}/reactions`, { senderId, senderName, emoji });
+      const reactions = res.data.data?.reactions ?? [];
+      setMessages((p) => p.map((item) => (item.id === message.id ? { ...item, reactions } : item)));
+      setReactionPickerMessageId(null);
+      setMessageMenuId(null);
+    } catch {
+      showToast('Reaction failed');
+    } finally {
+      setReactionBusyIds((p) => {
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
   const canEditMessage = (message: Msg) => {
     if (!message.id || message.deleted || message.type !== 'text' || message.sender_id !== senderId || !message.created_at) return false;
     return Date.now() - new Date(message.created_at).getTime() <= 2 * 60 * 1000;
@@ -467,6 +529,7 @@ export default function ChatPage() {
     if (!message.id || !canEditMessage(message)) return;
     setEditingMessageId(message.id);
     setEditingText(message.content ?? '');
+    setMessageMenuId(null);
   };
 
   const cancelEditMessage = () => {
@@ -545,6 +608,7 @@ export default function ChatPage() {
   const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
   const recordingTime = `${Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:${(recordingSeconds % 60).toString().padStart(2, '0')}`;
   const deletedText = (message: Msg) => `${message.deleted_by === senderId ? 'You' : (message.deleted_by_name ?? 'A member')} deleted this transmission.`;
+  const reactionTarget = reactionPickerMessageId ? messages.find((message) => message.id === reactionPickerMessageId) : null;
   const closeCopy = closeReason === 'terminated-by-creator'
     ? {
       eyebrow: 'ROOM TERMINATED',
@@ -730,7 +794,7 @@ export default function ChatPage() {
         </>
       </header>
 
-      <section className="chat-transcript neo-panel min-h-[62svh] flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:min-h-[64svh] sm:p-4 lg:min-h-0 lg:p-5">
+      <section className="chat-transcript neo-panel min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5">
         {!isJoined && room.creator_id !== senderId && (
           <div className="border-2 border-punch bg-panel px-3 py-2 text-xs uppercase tracking-wider text-muted">
             Press Join Room to enter this channel.
@@ -748,33 +812,70 @@ export default function ChatPage() {
         ))}
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
         {messages.map((m, i) => <article key={m.id ?? i} className={`group relative max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.deleted ? 'mx-auto border-punch/70 bg-panel text-muted' : m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <p className="text-[10px] uppercase tracking-wider text-muted">{m.deleted ? 'Message removed' : m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
-            {!m.deleted && m.sender_id === senderId && m.id && (
-              <div className="flex shrink-0 items-center gap-1">
-                {canEditMessage(m) && (
-                  <button
-                    className="message-delete-button"
-                    onClick={() => startEditMessage(m)}
-                    disabled={editingBusy}
-                    aria-label="Edit message"
-                    title="Edit message"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                )}
+          <div className="message-row-head mb-1">
+            <p className="message-sender-label text-[10px] uppercase tracking-wider text-muted">{m.deleted ? 'Message removed' : m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
+            {!m.deleted && m.id && (
+              <div className="message-actions relative">
                 <button
-                  className="message-delete-button"
-                  onClick={() => deleteMessage(m.id)}
-                  disabled={!!deletingMessageIds[m.id]}
-                  aria-label={deletingMessageIds[m.id] ? 'Deleting message' : 'Delete message'}
-                  title={deletingMessageIds[m.id] ? 'Deleting message' : 'Delete message'}
+                  className={`message-delete-button ${messageMenuId === m.id ? 'message-delete-button--active' : ''}`}
+                  onClick={() => setMessageMenuId((current) => (current === m.id ? null : m.id ?? null))}
+                  aria-label="Open message options"
+                  title="Message options"
+                  type="button"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  {messageMenuId === m.id ? <X className="h-3.5 w-3.5" /> : <MoreVertical className="h-3.5 w-3.5" />}
                 </button>
+                {messageMenuId === m.id && (
+                  <div className={`message-options-menu ${m.sender_id === senderId ? 'right-0' : 'left-0'}`}>
+                    {isJoined && (
+                      <button type="button" onClick={() => startReply(m)}>
+                        <Reply className="h-3.5 w-3.5" />
+                        <span>Reply</span>
+                      </button>
+                    )}
+                    {isJoined && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReactionPickerMessageId(m.id ?? null);
+                          setMessageMenuId(null);
+                        }}
+                      >
+                        <SmilePlus className="h-3.5 w-3.5" />
+                        <span>React</span>
+                      </button>
+                    )}
+                    {m.sender_id === senderId && canEditMessage(m) && (
+                      <button type="button" onClick={() => startEditMessage(m)} disabled={editingBusy}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                    {m.sender_id === senderId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMessageMenuId(null);
+                          deleteMessage(m.id);
+                        }}
+                        disabled={!!deletingMessageIds[m.id]}
+                        className="message-options-menu__danger"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>{deletingMessageIds[m.id] ? 'Deleting' : 'Delete'}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
+          {!m.deleted && m.reply_to && (
+            <div className="reply-quote mb-2">
+              <p className="reply-quote__name">{m.reply_to.sender_id === senderId ? 'You' : (m.reply_to.sender_name ?? 'Member')}</p>
+              <p className="reply-quote__content">{quoteLabel(m.reply_to)}</p>
+            </div>
+          )}
           {m.deleted && <p className="code-font text-xs uppercase tracking-[0.16em]">{deletedText(m)}</p>}
           {!m.deleted && m.type === 'text' && editingMessageId === m.id && (
             <div className="grid gap-2">
@@ -794,6 +895,25 @@ export default function ChatPage() {
           {!m.deleted && m.type === 'text' && editingMessageId !== m.id && <p className="whitespace-pre-wrap">{m.content}{m.edited && <span className="ml-2 text-[10px] uppercase tracking-wider text-muted">(edited)</span>}</p>}
           {!m.deleted && m.type === 'image' && m.file_url && <img src={m.file_url} className="max-h-72 w-full object-cover" />}
           {!m.deleted && m.type === 'voice' && m.file_url && <audio controls src={m.file_url} className="w-full" />}
+          {!m.deleted && !!m.reactions?.length && (
+            <div className="message-reactions">
+              {m.reactions.map((reaction) => {
+                const reactedByMe = reaction.senders.some((sender) => sender.sender_id === senderId);
+                return (
+                  <button
+                    key={reaction.emoji}
+                    className={`message-reaction ${reactedByMe ? 'message-reaction--mine' : ''}`}
+                    onClick={() => toggleReaction(m, reaction.emoji)}
+                    disabled={!isJoined || !!reactionBusyIds[`${m.id}:${reaction.emoji}`]}
+                    title={reaction.senders.map((sender) => sender.sender_name).join(', ')}
+                  >
+                    <span>{reaction.emoji}</span>
+                    <span>{reaction.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </article>)}
         {typingNames.length > 0 && (
           <div className="typing-indicator mx-auto max-w-full">
@@ -803,12 +923,52 @@ export default function ChatPage() {
         <div ref={messagesEndRef} className="h-1" />
       </section>
 
-    <footer className="neo-panel z-10 shrink-0 p-2 sm:p-3">
+    {isJoined && reactionTarget && !reactionTarget.deleted && (
+      <div className="reaction-dock">
+        <div className="reaction-dock__context">
+          <SmilePlus className="h-4 w-4 text-cyan" />
+          <div className="min-w-0">
+            <p className="reaction-dock__label">Reacting to {reactionTarget.sender_id === senderId ? 'you' : (reactionTarget.sender_name ?? 'member')}</p>
+            <p className="reaction-dock__preview">{quoteLabel(reactionTarget)}</p>
+          </div>
+        </div>
+        <div className="reaction-dock__emojis">
+          {REACTION_EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              className="reaction-picker-button"
+              onClick={() => toggleReaction(reactionTarget, emoji)}
+              disabled={!!reactionBusyIds[`${reactionTarget.id}:${emoji}`]}
+              aria-label={`React ${emoji}`}
+              type="button"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+        <button className="reaction-dock__close" onClick={() => setReactionPickerMessageId(null)} aria-label="Close reactions" type="button">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    )}
+
+    <footer className="neo-panel z-10 shrink-0 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
       <div className="grid gap-2">
+        {replyingTo && (
+          <div className="composer-reply">
+            <div className="min-w-0">
+              <p className="composer-reply__label">Replying to {replyingTo.sender_id === senderId ? 'you' : (replyingTo.sender_name ?? 'member')}</p>
+              <p className="composer-reply__content">{quoteLabel(replyingTo)}</p>
+            </div>
+            <button className="message-delete-button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" title="Cancel reply">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         <textarea
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
-          className="h-10 w-full resize-none border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60 sm:h-14"
+          className="min-h-10 w-full resize-none border-2 border-accent bg-bg px-3 py-2 text-sm text-text outline-none focus:border-cyan disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-14"
           placeholder={isJoined ? 'Type a transmission' : 'Join this channel to send'}
           disabled={!isJoined || recordingVoice}
           onKeyDown={(e) => {

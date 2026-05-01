@@ -8,4 +8,5 @@ export interface MessagePayload {
   content?: string;
   fileUrl?: string;
   filePath?: string;
+  replyToMessageId?: string;
 }

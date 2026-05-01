@@ -11,6 +11,7 @@ import {
   getRoomController,
   leaveRoomController,
   participantsController,
+  reactToMessageController,
   terminateRoomController
 } from '../controllers/room.controller.js';
 
@@ -19,6 +20,7 @@ router.post('/rooms', createRoomLimiter, asyncHandler(createRoomController));
 router.get('/rooms/:code', roomLookupLimiter, asyncHandler(getRoomController));
 router.get('/rooms/:code/messages', roomLookupLimiter, asyncHandler(getMessagesController));
 router.patch('/rooms/:code/messages/:messageId', asyncHandler(editMessageController));
+router.post('/rooms/:code/messages/:messageId/reactions', asyncHandler(reactToMessageController));
 router.delete('/rooms/:code/messages/:messageId', asyncHandler(deleteMessageController));
 router.get('/rooms/:code/participants', roomLookupLimiter, asyncHandler(participantsController));
 router.post('/rooms/:code/extend', asyncHandler(extendRoomController));

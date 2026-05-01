@@ -88,7 +88,8 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
         fileName: parsed.data.fileName,
         fileSize: parsed.data.fileSize,
         mimeType: parsed.data.mimeType,
-        replyToMessageId: parsed.data.replyToMessageId
+        replyToMessageId: parsed.data.replyToMessageId,
+        burnAfterRead: parsed.data.burnAfterRead
       });
 
       io.to(room.id).emit('receive-message', message);

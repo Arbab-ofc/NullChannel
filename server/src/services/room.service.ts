@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { generateCode } from '../utils/generateCode.js';
 import { cleanupRoomsByIds } from './cleanup.service.js';
+import { deleteMediaByFileId } from './media.service.js';
 import { joinMembership } from './membership.service.js';
 
 const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at, expiry_extended, pinned_message_id';
@@ -137,4 +138,44 @@ export const pinRoomMessage = async (code: string, senderId: string, messageId: 
   }
   if (error) throw error;
   return { room: data, pinnedMessageId: messageId };
+};
+
+export const wipeRoomMessages = async (code: string, senderId: string) => {
+  const room = await getRoomByCode(code);
+  if (!room) return { error: 'ROOM_NOT_FOUND' as const };
+  if (room.creator_id !== senderId) return { error: 'FORBIDDEN' as const };
+
+  const { data: mediaRows, error: mediaError } = await supabase
+    .from('messages')
+    .select('file_path')
+    .eq('room_id', room.id)
+    .not('file_path', 'is', null);
+  if (mediaError) throw mediaError;
+
+  for (const row of mediaRows ?? []) {
+    if (row.file_path) {
+      try {
+        await deleteMediaByFileId(row.file_path);
+      } catch {
+        // Panic wipe is best-effort for remote media; database cleanup still proceeds.
+      }
+    }
+  }
+
+  const { error: clearPinError } = await supabase
+    .from('rooms')
+    .update({ pinned_message_id: null })
+    .eq('id', room.id);
+  if (clearPinError?.message?.includes('pinned_message_id')) {
+    throw new Error('Database schema is outdated. Run docs/supabase-migration-v8.sql and retry.');
+  }
+  if (clearPinError) throw clearPinError;
+
+  const { count, error: deleteError } = await supabase
+    .from('messages')
+    .delete({ count: 'exact' })
+    .eq('room_id', room.id);
+  if (deleteError) throw deleteError;
+
+  return { roomId: room.id, code: room.code, wipedMessages: count ?? 0 };
 };

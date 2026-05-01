@@ -518,6 +518,22 @@ body {
   opacity: 0.6;
 }
 
+.burn-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid hsl(var(--punch) / 0.65);
+  background: hsl(var(--punch) / 0.1);
+  color: hsl(var(--punch));
+  padding: 0.38rem 0.5rem;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .pinned-message {
   display: flex;
   align-items: center;
@@ -755,6 +771,28 @@ body {
 
 .composer-action-button--image {
   border-color: hsl(var(--panel-border));
+}
+
+.composer-action-button--burn {
+  border-color: hsl(var(--panel-border));
+  color: hsl(var(--muted));
+}
+
+.composer-action-button--burn.is-burning {
+  border-color: hsl(18 100% 58%);
+  background:
+    linear-gradient(180deg, hsl(18 100% 58% / 0.28), hsl(var(--punch) / 0.14)),
+    hsl(var(--bg));
+  box-shadow:
+    2px 2px 0 hsl(var(--shadow-offset)),
+    0 0 0 1px hsl(18 100% 58% / 0.2),
+    0 0 18px hsl(18 100% 58% / 0.2);
+  color: hsl(18 100% 58%);
+}
+
+.composer-action-button--burn.is-burning svg {
+  color: hsl(18 100% 58%);
+  filter: drop-shadow(0 0 6px hsl(18 100% 58% / 0.35));
 }
 
 .composer-action-button--file {

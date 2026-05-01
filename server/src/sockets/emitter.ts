@@ -18,6 +18,10 @@ export const emitMessageDeleted = (roomId: string, payload: { messageId: string;
   ioRef?.to(roomId).emit('message-deleted', payload);
 };
 
+export const emitMessageBurned = (roomId: string, payload: { messageId: string }) => {
+  ioRef?.to(roomId).emit('message-burned', payload);
+};
+
 export const emitMessageEdited = (roomId: string, payload: { messageId: string; content: string; editedBy: string }) => {
   ioRef?.to(roomId).emit('message-edited', payload);
 };
@@ -35,4 +39,8 @@ export const emitRoomExtended = (roomId: string, payload: { code: string; expire
 
 export const emitMessagePinned = (roomId: string, payload: { code: string; pinnedMessageId: string | null }) => {
   ioRef?.to(roomId).emit('message-pinned', payload);
+};
+
+export const emitRoomWiped = (roomId: string, payload: { code: string; wipedMessages: number }) => {
+  ioRef?.to(roomId).emit('room-wiped', payload);
 };

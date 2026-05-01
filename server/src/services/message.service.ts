@@ -18,6 +18,7 @@ type MessageRow = {
   deleted_by?: string | null;
   deleted_by_name?: string | null;
   deleted_at?: string | null;
+  burn_after_read?: boolean | null;
   created_at: string;
 };
 
@@ -28,7 +29,8 @@ type ReactionRow = {
   emoji: string;
 };
 
-const messageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, deleted, deleted_by, deleted_by_name, deleted_at, created_at';
+const messageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, deleted, deleted_by, deleted_by_name, deleted_at, burn_after_read, created_at';
+const v9MessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, deleted, deleted_by, deleted_by_name, deleted_at, created_at';
 const v8MessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, created_at';
 const v7MessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, reply_to_message_id, created_at';
 const legacyMessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, created_at';
@@ -39,6 +41,11 @@ const withDeleteDefaults = <T extends Record<string, unknown>>(message: T) => ({
   deleted_by: null,
   deleted_by_name: null,
   deleted_at: null
+});
+
+const withBurnDefault = <T extends Record<string, unknown>>(message: T) => ({
+  ...message,
+  burn_after_read: false
 });
 
 const summarizeReactions = (rows: ReactionRow[]) => {
@@ -107,13 +114,22 @@ export const listMessages = async (roomId: string) => {
     .select(messageSelect)
     .eq('room_id', roomId)
     .order('created_at', { ascending: true });
+  if (error?.message?.includes('burn_after_read')) {
+    const fallback = await supabase
+      .from('messages')
+      .select(v9MessageSelect)
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true });
+    data = (fallback.data ?? []).map(withBurnDefault);
+    error = fallback.error;
+  }
   if (error?.message?.includes('deleted')) {
     const fallback = await supabase
       .from('messages')
       .select(v8MessageSelect)
       .eq('room_id', roomId)
       .order('created_at', { ascending: true });
-    data = (fallback.data ?? []).map(withDeleteDefaults);
+    data = (fallback.data ?? []).map((m) => withBurnDefault(withDeleteDefaults(m)));
     error = fallback.error;
   }
   if (error?.message?.includes('file_name') || error?.message?.includes('file_size') || error?.message?.includes('mime_type')) {
@@ -122,7 +138,7 @@ export const listMessages = async (roomId: string) => {
       .select(v7MessageSelect)
       .eq('room_id', roomId)
       .order('created_at', { ascending: true });
-    data = (fallback.data ?? []).map((m) => withDeleteDefaults({ ...m, file_name: null, file_size: null, mime_type: null }));
+    data = (fallback.data ?? []).map((m) => withBurnDefault(withDeleteDefaults({ ...m, file_name: null, file_size: null, mime_type: null })));
     error = fallback.error;
   }
   if (error?.message?.includes('reply_to_message_id')) {
@@ -131,7 +147,7 @@ export const listMessages = async (roomId: string) => {
       .select(legacyMessageSelect)
       .eq('room_id', roomId)
       .order('created_at', { ascending: true });
-    data = (fallback.data ?? []).map((m) => withDeleteDefaults({ ...m, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }));
+    data = (fallback.data ?? []).map((m) => withBurnDefault(withDeleteDefaults({ ...m, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })));
     error = fallback.error;
   }
   if (error?.message?.includes('sender_name')) {
@@ -140,7 +156,7 @@ export const listMessages = async (roomId: string) => {
       .select('id, room_id, sender_id, type, content, file_url, file_path, created_at')
       .eq('room_id', roomId)
       .order('created_at', { ascending: true });
-    data = (fallback.data ?? []).map((m) => withDeleteDefaults({ ...m, sender_name: 'Member', file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }));
+    data = (fallback.data ?? []).map((m) => withBurnDefault(withDeleteDefaults({ ...m, sender_name: 'Member', file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })));
     error = fallback.error;
   }
   if (error) throw error;
@@ -168,10 +184,35 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
       file_name: payload.fileName ?? null,
       file_size: payload.fileSize ?? null,
       mime_type: payload.mimeType ?? null,
-      reply_to_message_id: payload.replyToMessageId ?? null
+      reply_to_message_id: payload.replyToMessageId ?? null,
+      burn_after_read: payload.burnAfterRead ?? false
     })
     .select(messageSelect)
     .single();
+  if (error?.message?.includes('burn_after_read')) {
+    if (payload.burnAfterRead) {
+      throw new Error('Database schema is outdated. Run docs/supabase-migration-v10.sql and retry.');
+    }
+    const fallback = await supabase
+      .from('messages')
+      .insert({
+        room_id: roomId,
+        sender_id: payload.senderId,
+        sender_name: payload.senderName,
+        type: payload.type,
+        content: payload.content ?? null,
+        file_url: payload.fileUrl ?? null,
+        file_path: payload.filePath ?? null,
+        file_name: payload.fileName ?? null,
+        file_size: payload.fileSize ?? null,
+        mime_type: payload.mimeType ?? null,
+        reply_to_message_id: payload.replyToMessageId ?? null
+      })
+      .select(v9MessageSelect)
+      .single();
+    data = fallback.data ? withBurnDefault(fallback.data) : null;
+    error = fallback.error;
+  }
   if (error?.message?.includes('deleted')) {
     const fallback = await supabase
       .from('messages')
@@ -190,7 +231,7 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
       })
       .select(v8MessageSelect)
       .single();
-    data = fallback.data ? withDeleteDefaults(fallback.data) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults(fallback.data)) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('file_name') || error?.message?.includes('file_size') || error?.message?.includes('mime_type')) {
@@ -208,7 +249,7 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
       })
       .select(v7MessageSelect)
       .single();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, file_name: payload.fileName ?? null, file_size: payload.fileSize ?? null, mime_type: payload.mimeType ?? null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, file_name: payload.fileName ?? null, file_size: payload.fileSize ?? null, mime_type: payload.mimeType ?? null })) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('reply_to_message_id')) {
@@ -225,7 +266,7 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
       })
       .select(legacyMessageSelect)
       .single();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('sender_name')) {
@@ -241,7 +282,7 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
       })
       .select('id, room_id, sender_id, type, content, file_url, file_path, created_at')
       .single();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, sender_name: payload.senderName, file_name: payload.fileName ?? null, file_size: payload.fileSize ?? null, mime_type: payload.mimeType ?? null, reply_to_message_id: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, sender_name: payload.senderName, file_name: payload.fileName ?? null, file_size: payload.fileSize ?? null, mime_type: payload.mimeType ?? null, reply_to_message_id: null })) : null;
     error = fallback.error;
   }
 
@@ -252,16 +293,25 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
 export const getMessageById = async (messageId: string) => {
   let { data, error } = await supabase
     .from('messages')
-    .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id, file_name, file_size, mime_type, deleted, deleted_by, deleted_by_name, deleted_at')
+    .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id, file_name, file_size, mime_type, deleted, deleted_by, deleted_by_name, deleted_at, burn_after_read')
     .eq('id', messageId)
     .maybeSingle();
+  if (error?.message?.includes('burn_after_read')) {
+    const fallback = await supabase
+      .from('messages')
+      .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id, file_name, file_size, mime_type, deleted, deleted_by, deleted_by_name, deleted_at')
+      .eq('id', messageId)
+      .maybeSingle();
+    data = fallback.data ? withBurnDefault(fallback.data) : null;
+    error = fallback.error;
+  }
   if (error?.message?.includes('deleted')) {
     const fallback = await supabase
       .from('messages')
       .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id, file_name, file_size, mime_type')
       .eq('id', messageId)
       .maybeSingle();
-    data = fallback.data ? withDeleteDefaults(fallback.data) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults(fallback.data)) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('file_name') || error?.message?.includes('file_size') || error?.message?.includes('mime_type')) {
@@ -270,7 +320,7 @@ export const getMessageById = async (messageId: string) => {
       .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id')
       .eq('id', messageId)
       .maybeSingle();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null })) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('reply_to_message_id')) {
@@ -279,7 +329,7 @@ export const getMessageById = async (messageId: string) => {
       .select('id, room_id, sender_id, sender_name, type, file_path, created_at')
       .eq('id', messageId)
       .maybeSingle();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('sender_name') || error?.message?.includes('file_path')) {
@@ -288,7 +338,7 @@ export const getMessageById = async (messageId: string) => {
       .select('id, room_id, sender_id, type, created_at')
       .eq('id', messageId)
       .maybeSingle();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}`, file_path: null, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}`, file_path: null, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })) : null;
     error = fallback.error;
   }
   if (error) throw error;
@@ -333,7 +383,7 @@ export const updateMessageContent = async (messageId: string, content: string) =
       .eq('id', messageId)
       .select(v8MessageSelect)
       .single();
-    data = fallback.data ? withDeleteDefaults(fallback.data) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults(fallback.data)) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('file_name') || error?.message?.includes('file_size') || error?.message?.includes('mime_type')) {
@@ -343,7 +393,7 @@ export const updateMessageContent = async (messageId: string, content: string) =
       .eq('id', messageId)
       .select(v7MessageSelect)
       .single();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null })) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('reply_to_message_id')) {
@@ -353,7 +403,7 @@ export const updateMessageContent = async (messageId: string, content: string) =
       .eq('id', messageId)
       .select(legacyMessageSelect)
       .single();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })) : null;
     error = fallback.error;
   }
   if (error?.message?.includes('sender_name')) {
@@ -363,7 +413,7 @@ export const updateMessageContent = async (messageId: string, content: string) =
       .eq('id', messageId)
       .select('id, room_id, sender_id, type, content, file_url, file_path, created_at')
       .single();
-    data = fallback.data ? withDeleteDefaults({ ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}`, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null }) : null;
+    data = fallback.data ? withBurnDefault(withDeleteDefaults({ ...fallback.data, sender_name: `User-${fallback.data.sender_id.slice(0, 6)}`, file_name: null, file_size: null, mime_type: null, reply_to_message_id: null })) : null;
     error = fallback.error;
   }
   if (error) throw error;
@@ -400,4 +450,9 @@ export const toggleMessageReaction = async (messageId: string, senderId: string,
   if (error) throw error;
 
   return summarizeReactions((data ?? []) as ReactionRow[]);
+};
+
+export const hardDeleteMessageById = async (messageId: string) => {
+  const { error } = await supabase.from('messages').delete().eq('id', messageId);
+  if (error) throw error;
 };

@@ -17,6 +17,10 @@ export const reactionSchema = z.object({
   emoji: z.string().trim().min(1).max(8)
 });
 
+export const burnReadSchema = z.object({
+  senderId
+});
+
 export const socketMessageSchema = z.object({
   roomCode: z.string().trim().length(8).regex(/^[A-Z0-9]+$/),
   senderId,
@@ -28,5 +32,6 @@ export const socketMessageSchema = z.object({
   fileName: z.string().trim().min(1).max(240).optional(),
   fileSize: z.number().int().min(0).max(15 * 1024 * 1024).optional(),
   mimeType: z.string().trim().max(160).optional(),
-  replyToMessageId: z.string().uuid().optional()
+  replyToMessageId: z.string().uuid().optional(),
+  burnAfterRead: z.boolean().optional()
 }).refine((v) => (v.type === 'text' ? !!v.content : !!v.fileUrl), 'Invalid message payload');

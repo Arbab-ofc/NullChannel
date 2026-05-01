@@ -28,6 +28,7 @@ create table if not exists messages (
   deleted_by text,
   deleted_by_name text,
   deleted_at timestamptz,
+  burn_after_read boolean not null default false,
   created_at timestamptz not null default now()
 );
 

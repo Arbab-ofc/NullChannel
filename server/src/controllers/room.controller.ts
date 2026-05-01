@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
-import { createRoom, extendRoomExpiry, getRoomByCode, pinRoomMessage, terminateRoom } from '../services/room.service.js';
-import { deleteMessageById, getMessageById, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
+import { createRoom, extendRoomExpiry, getRoomByCode, pinRoomMessage, terminateRoom, wipeRoomMessages } from '../services/room.service.js';
+import { deleteMessageById, getMessageById, hardDeleteMessageById, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
 import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, extendRoomSchema, pinMessageSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
-import { deleteMessageSchema, editMessageSchema, reactionSchema } from '../schemas/message.schema.js';
-import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended } from '../sockets/emitter.js';
+import { burnReadSchema, deleteMessageSchema, editMessageSchema, reactionSchema } from '../schemas/message.schema.js';
+import { getActiveRoomsForSender, getParticipantsForRoom, isActiveMember, leaveMembership } from '../services/membership.service.js';
+import { emitMessageBurned, emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended, emitRoomWiped } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -150,6 +150,49 @@ export const reactToMessageController = async (req: Request, res: Response) => {
   res.json(successResponse({ messageId: message.id, reactions }));
 };
 
+export const burnReadMessageController = async (req: Request, res: Response) => {
+  const parsed = burnReadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const messageId = String(req.params.messageId ?? '');
+  const room = await getRoomByCode(code);
+  if (!room) {
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  const message = await getMessageById(messageId);
+  if (!message || message.room_id !== room.id) {
+    res.status(404).json(errorResponse('MESSAGE_NOT_FOUND', 'Message not found.'));
+    return;
+  }
+  if (!message.burn_after_read || message.deleted) {
+    res.status(409).json(errorResponse('NOT_BURNABLE', 'This message is not burn-after-read.'));
+    return;
+  }
+  if (message.sender_id === parsed.data.senderId) {
+    res.status(403).json(errorResponse('SENDER_CANNOT_BURN', 'Sender cannot consume their own burn-after-read message.'));
+    return;
+  }
+  const activeMember = await isActiveMember(room.id, parsed.data.senderId);
+  if (!activeMember) {
+    res.status(403).json(errorResponse('JOIN_REQUIRED', 'Join this channel before reading burn-after-read messages.'));
+    return;
+  }
+  if (message.file_path) {
+    try {
+      await deleteMediaByFileId(message.file_path);
+    } catch {
+      // Burn cleanup should still remove the message row.
+    }
+  }
+  await hardDeleteMessageById(message.id);
+  emitMessageBurned(room.id, { messageId: message.id });
+  res.json(successResponse({ burned: true, messageId: message.id }));
+};
+
 export const pinMessageController = async (req: Request, res: Response) => {
   const parsed = pinMessageSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -201,6 +244,26 @@ export const terminateRoomController = async (req: Request, res: Response) => {
   }
   emitRoomExpired(result.roomId, { reason: 'terminated-by-creator' });
   emitRoomExpiredByCode(result.code, { reason: 'terminated-by-creator' });
+  res.json(successResponse(result));
+};
+
+export const wipeRoomController = async (req: Request, res: Response) => {
+  const parsed = terminateRoomSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const result = await wipeRoomMessages(code, parsed.data.senderId);
+  if ('error' in result) {
+    if (result.error === 'FORBIDDEN') {
+      res.status(403).json(errorResponse('FORBIDDEN', 'Only room creator can wipe this channel.'));
+      return;
+    }
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  emitRoomWiped(result.roomId, { code: result.code, wipedMessages: result.wipedMessages });
   res.json(successResponse(result));
 };
 

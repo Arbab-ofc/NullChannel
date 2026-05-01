@@ -12,4 +12,5 @@ export interface MessagePayload {
   fileSize?: number;
   mimeType?: string;
   replyToMessageId?: string;
+  burnAfterRead?: boolean;
 }

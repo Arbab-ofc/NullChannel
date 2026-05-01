@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset, Reply, SmilePlus, MoreVertical, Paperclip, FileText, Download, Pin, PinOff, Images, ExternalLink } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset, Reply, SmilePlus, MoreVertical, Paperclip, FileText, Download, Pin, PinOff, Images, ExternalLink, Siren, Flame } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -12,7 +12,7 @@ import { LoadingSignal } from '../components/common/LoadingSignal';
 type ReactionSummary = { emoji: string; count: number; senders: Array<{ sender_id: string; sender_name: string }> };
 type MessageType = 'text'|'image'|'voice'|'file';
 type ReplyPreview = { id: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_name?: string };
-type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_path?: string; file_name?: string; file_size?: number; mime_type?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
+type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_path?: string; file_name?: string; file_size?: number; mime_type?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; burn_after_read?: boolean; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string; expiry_extended?: boolean; pinned_message_id?: string | null };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
@@ -46,6 +46,7 @@ export default function ChatPage() {
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
   const [reactionBusyIds, setReactionBusyIds] = useState<Record<string, boolean>>({});
+  const [burnAfterReadMode, setBurnAfterReadMode] = useState(false);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [toast, setToast] = useState('');
   const [nameInput, setNameInput] = useState('');
@@ -57,6 +58,7 @@ export default function ChatPage() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [terminateBusy, setTerminateBusy] = useState(false);
+  const [wipeBusy, setWipeBusy] = useState(false);
   const [extendBusy, setExtendBusy] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
   const [extendModalOpen, setExtendModalOpen] = useState(false);
@@ -75,6 +77,7 @@ export default function ChatPage() {
   const recordingStartedAt = useRef(0);
   const recordingInterval = useRef<number | null>(null);
   const recordingLimitTimeout = useRef<number | null>(null);
+  const burnedReadIds = useRef<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
 
@@ -163,6 +166,23 @@ export default function ChatPage() {
   }, [messages, notices, typingUsers]);
 
   useEffect(() => {
+    if (!room || !isJoined) return;
+    messages.forEach((message) => {
+      if (!message.id || !message.burn_after_read || message.deleted || message.sender_id === senderId || burnedReadIds.current[message.id]) return;
+      burnedReadIds.current[message.id] = true;
+      window.setTimeout(() => {
+        api.post(`/rooms/${room.code}/messages/${message.id}/burn-read`, { senderId })
+          .then(() => {
+            setMessages((current) => current.filter((item) => item.id !== message.id));
+          })
+          .catch(() => {
+            delete burnedReadIds.current[message.id as string];
+          });
+      }, 1400);
+    });
+  }, [messages, room, isJoined, senderId]);
+
+  useEffect(() => {
     if (!room) return;
     socket.on('room-joined', () => {
       setIsJoined(true);
@@ -228,6 +248,13 @@ export default function ChatPage() {
         reactions: payload.reactions
       } : message)));
     });
+    socket.on('message-burned', (payload: { messageId?: string }) => {
+      if (!payload.messageId) return;
+      setMessages((p) => p.filter((message) => message.id !== payload.messageId));
+      setReplyingTo((current) => (current?.id === payload.messageId ? null : current));
+      setReactionPickerMessageId((current) => (current === payload.messageId ? null : current));
+      setMessageMenuId((current) => (current === payload.messageId ? null : current));
+    });
     socket.on('user-left', (payload: { senderId?: string; senderName?: string }) => {
       if (payload?.senderId === senderId) return;
       const name = payload?.senderName ?? 'A user';
@@ -280,6 +307,16 @@ export default function ChatPage() {
       setRoom((current) => (current && current.code === room.code ? { ...current, pinned_message_id: payload.pinnedMessageId ?? null } : current));
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: payload.pinnedMessageId ? 'Message pinned' : 'Pinned message cleared' }]);
     });
+    socket.on('room-wiped', (payload: { code?: string; wipedMessages?: number } = {}) => {
+      if (payload.code !== room.code) return;
+      setMessages([]);
+      setReplyingTo(null);
+      setReactionPickerMessageId(null);
+      setMessageMenuId(null);
+      setRoom((current) => (current && current.code === room.code ? { ...current, pinned_message_id: null } : current));
+      const count = payload.wipedMessages ?? 0;
+      setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: count > 0 ? `Panic wipe cleared ${count} messages` : 'Panic wipe cleared the room' }]);
+    });
 
     if ((isJoined || room.creator_id === senderId) && !!senderName) {
       socket.emit('join-room', { roomCode: room.code, senderId, senderName });
@@ -295,8 +332,10 @@ export default function ChatPage() {
       socket.off('message-deleted');
       socket.off('message-edited');
       socket.off('message-reactions');
+      socket.off('message-burned');
       socket.off('room-extended');
       socket.off('message-pinned');
+      socket.off('room-wiped');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
@@ -325,7 +364,8 @@ export default function ChatPage() {
       senderName: senderName || undefined,
       type: 'text',
       content: text.trim(),
-      replyToMessageId: replyingTo?.id
+      replyToMessageId: replyingTo?.id,
+      burnAfterRead: burnAfterReadMode
     });
     setText('');
     setReplyingTo(null);
@@ -365,7 +405,8 @@ export default function ChatPage() {
         type: 'image',
         fileUrl: res.data.data.fileUrl,
         filePath: res.data.data.fileId ?? res.data.data.filePath,
-        replyToMessageId: replyingTo?.id
+        replyToMessageId: replyingTo?.id,
+        burnAfterRead: burnAfterReadMode
       });
       setReplyingTo(null);
     } finally {
@@ -403,7 +444,8 @@ export default function ChatPage() {
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type || 'application/octet-stream',
-        replyToMessageId: replyingTo?.id
+        replyToMessageId: replyingTo?.id,
+        burnAfterRead: burnAfterReadMode
       });
       setReplyingTo(null);
       showToast('File sent');
@@ -435,7 +477,8 @@ export default function ChatPage() {
         type: 'voice',
         fileUrl: res.data.data.fileUrl,
         filePath: res.data.data.fileId ?? res.data.data.filePath,
-        replyToMessageId: replyingTo?.id
+        replyToMessageId: replyingTo?.id,
+        burnAfterRead: burnAfterReadMode
       });
       setReplyingTo(null);
       showToast('Voice sent');
@@ -693,6 +736,26 @@ export default function ChatPage() {
     }
   };
 
+  const panicWipeRoom = async () => {
+    if (!room || room.creator_id !== senderId || wipeBusy) return;
+    const confirmed = window.confirm('Panic wipe deletes every message and shared file in this room, but keeps the room open. Continue?');
+    if (!confirmed) return;
+    setWipeBusy(true);
+    try {
+      const res = await api.post(`/rooms/${room.code}/wipe`, { senderId });
+      setMessages([]);
+      setReplyingTo(null);
+      setReactionPickerMessageId(null);
+      setMessageMenuId(null);
+      setRoom((current) => (current ? { ...current, pinned_message_id: null } : current));
+      showToast(`Wiped ${res.data.data?.wipedMessages ?? 0} messages`);
+    } catch {
+      showToast('Wipe failed');
+    } finally {
+      setWipeBusy(false);
+    }
+  };
+
   const typingNames = Object.values(typingUsers);
   const typingLabel = typingNames.length > 1 ? `${typingNames.slice(0, 2).join(', ')} are typing` : `${typingNames[0] ?? 'Someone'} is typing`;
   const recordingTime = `${Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:${(recordingSeconds % 60).toString().padStart(2, '0')}`;
@@ -834,6 +897,7 @@ export default function ChatPage() {
               {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend'}
             </Button>
           )}
+          {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
         </div>
         <div className="mt-2 flex items-center justify-between gap-2 sm:mt-4 xl:hidden">
@@ -879,6 +943,7 @@ export default function ChatPage() {
                   {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend Expiry'}
                 </Button>
               )}
+              {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
               {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
             </div>
           </aside>
@@ -992,6 +1057,12 @@ export default function ChatPage() {
             <div className="reply-quote mb-2">
               <p className="reply-quote__name">{m.reply_to.sender_id === senderId ? 'You' : (m.reply_to.sender_name ?? 'Member')}</p>
               <p className="reply-quote__content">{quoteLabel(m.reply_to)}</p>
+            </div>
+          )}
+          {!m.deleted && m.burn_after_read && (
+            <div className="burn-badge mb-2">
+              <Flame className="h-3.5 w-3.5" />
+              <span>{m.sender_id === senderId ? 'Burns after another member reads it' : 'Burn-after-read message'}</span>
             </div>
           )}
           {m.deleted && <p className="code-font text-xs uppercase tracking-[0.16em]">{deletedText(m)}</p>}
@@ -1129,6 +1200,17 @@ export default function ChatPage() {
           </div>
         )}
         <div className="composer-actions">
+          <button
+            className={`composer-action-button composer-action-button--burn ${burnAfterReadMode ? 'is-burning' : ''}`}
+            onClick={() => setBurnAfterReadMode((value) => !value)}
+            disabled={!isJoined || recordingVoice}
+            type="button"
+            title={burnAfterReadMode ? 'Burn-after-read on' : 'Burn-after-read off'}
+            aria-pressed={burnAfterReadMode}
+          >
+            <Flame className="h-4 w-4" />
+            <span className="composer-label">{burnAfterReadMode ? '[BURN]' : '[KEEP]'}</span>
+          </button>
           <label className={`composer-action-button composer-action-button--image ${uploadingImage || !isJoined || recordingVoice ? 'composer-control-disabled' : ''} ${uploadingImage ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
             <ImagePlus className="h-4 w-4" />
             <span className="composer-label">{uploadingImage ? '[UP]' : '[IMG]'}</span>

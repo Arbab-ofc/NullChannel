@@ -65,6 +65,8 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Quoted replies          | Messages can quote an earlier text, image, or voice transmission.            |
 | Message reactions       | Members can toggle quick emoji reactions with live count updates.            |
 | Pinned message          | Room creator can pin one active message for everyone in the channel.         |
+| Room panic wipe         | Room creator can erase all messages and shared media while keeping the room open. |
+| Burn-after-read mode    | Sender can toggle one-read messages that disappear after another member sees them. |
 | Image gallery           | Shared images are collected in the room sidebar for quick review.            |
 | Link previews           | Text messages with URLs render compact domain preview cards.                 |
 | Typing indicator        | Live typing state with timeout cleanup.                                      |
@@ -101,8 +103,10 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `GET`    | `/api/rooms/:code/messages`            | List room messages                          |
 | `POST`   | `/api/rooms/:code/extend`              | Extend expiry once with a custom duration   |
 | `PATCH`  | `/api/rooms/:code/pin`                 | Pin or clear the room pinned message        |
+| `POST`   | `/api/rooms/:code/wipe`                | Delete all room messages/media and keep the room open |
 | `PATCH`  | `/api/rooms/:code/messages/:messageId` | Edit your own text message within 2 minutes |
 | `POST`   | `/api/rooms/:code/messages/:messageId/reactions` | Toggle an emoji reaction on a message |
+| `POST`   | `/api/rooms/:code/messages/:messageId/burn-read` | Consume and remove a burn-after-read message |
 | `DELETE` | `/api/rooms/:code/messages/:messageId` | Delete a message                            |
 | `GET`    | `/api/rooms/:code/participants`        | List active participants                    |
 | `POST`   | `/api/rooms/:code/leave`               | Leave a room                                |
@@ -128,10 +132,12 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Server -> Client | `receive-message` | Broadcast a new message                          |
 | Server -> Client | `user-typing`     | Broadcast typing status                          |
 | Server -> Client | `message-edited`  | Broadcast an edited message update               |
+| Server -> Client | `message-burned`  | Broadcast burn-after-read removal                |
 | Server -> Client | `message-reactions` | Broadcast reaction count updates              |
 | Server -> Client | `message-pinned` | Broadcast pinned message updates                 |
 | Server -> Client | `message-deleted` | Broadcast a tombstone update                     |
 | Server -> Client | `room-extended`   | Broadcast expiry updates after creator extension |
+| Server -> Client | `room-wiped`      | Broadcast panic wipe message cleanup        |
 | Server -> Client | `user-joined`     | Broadcast participant join                       |
 | Server -> Client | `user-left`       | Broadcast participant leave                      |
 | Server -> Client | `room-expired`    | Broadcast room expiry or termination             |
@@ -176,6 +182,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `v7` | Add quoted replies and message reactions |
 | `v8` | Add pinned messages, file messages, and file metadata |
 | `v9` | Persist deleted-message tombstones across refreshes |
+| `v10` | Add burn-after-read messages |
 
 ## Prerequisites
 

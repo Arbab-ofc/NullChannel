@@ -13,7 +13,7 @@
 
 Short-lived, real-time channels with no signup.
 
-NullChannel is a temporary chat system for private and group rooms. Users create or join an 8-character code, chat in real time, send image or voice media, and let the room expire on a timer with automatic cleanup. Room creators can also extend expiry once with a custom duration.
+NullChannel is a temporary chat system for private and group rooms. Users create or join an 8-character code, chat in real time, send image, voice, or file media, pin important messages, wipe a room on demand, burn messages after read, and let the room expire on a timer with automatic cleanup. Room creators can also extend expiry once with a custom duration.
 
 ![Built and developed by Arbab Arshad](docs/built-by-arbab-arshad.svg)
 
@@ -31,11 +31,11 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Area     | What it does                                                                    | Main files                                              |
 | -------- | ------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Frontend | Landing page, room join/create flow, chat UI, voice recording, participant list, custom expiry extension | `client/src/pages/*`                                  |
-| Backend  | REST APIs, validation, room lifecycle, message handling, cleanup, expiry extension | `server/src/controllers/*`, `server/src/services/*` |
-| Realtime | Socket room join, typing indicator, live message broadcast, tombstones, room expiry updates | `server/src/sockets/*`                                |
-| Storage  | Room metadata, messages, memberships, cleanup lifecycle, extension flag         | Supabase PostgreSQL                                     |
-| Media    | Image and voice upload plus deletion                                            | ImageKit                                                |
+| Frontend | Landing page, room join/create flow, chat UI, pinning, burn mode, gallery, voice recording, participant list | `client/src/pages/*`                                  |
+| Backend  | REST APIs, validation, room lifecycle, message handling, cleanup, pinning, wipe, burn-after-read | `server/src/controllers/*`, `server/src/services/*` |
+| Realtime | Socket room join, typing indicator, live message broadcast, tombstones, burn, wipe, room expiry updates | `server/src/sockets/*`                                |
+| Storage  | Room metadata, messages, reactions, memberships, cleanup lifecycle, extension flag | Supabase PostgreSQL                                     |
+| Media    | Image, voice, and file upload plus deletion                                      | ImageKit                                                |
 
 ## Architecture
 
@@ -88,7 +88,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Table            | Purpose                                               |
 | ---------------- | ----------------------------------------------------- |
 | `rooms`        | Room code, creator, type, room name, expiry timestamp, one-time extension flag |
-| `messages`     | Text, image, voice, file, and quoted-reply message records |
+| `messages`     | Text, image, voice, file, burn-after-read, and quoted-reply message records |
 | `message_reactions` | Per-user emoji reactions for each message       |
 | `room_members` | Membership, display name, join/leave state            |
 
@@ -137,7 +137,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Server -> Client | `message-pinned` | Broadcast pinned message updates                 |
 | Server -> Client | `message-deleted` | Broadcast a tombstone update                     |
 | Server -> Client | `room-extended`   | Broadcast expiry updates after creator extension |
-| Server -> Client | `room-wiped`      | Broadcast panic wipe message cleanup        |
+| Server -> Client | `room-wiped`      | Broadcast panic wipe message cleanup             |
 | Server -> Client | `user-joined`     | Broadcast participant join                       |
 | Server -> Client | `user-left`       | Broadcast participant leave                      |
 | Server -> Client | `room-expired`    | Broadcast room expiry or termination             |
@@ -156,7 +156,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 |   |-- architecture-map.svg
 |   |-- data-model-graph.svg
 |   |-- message-flow-map.svg
-|   `-- supabase-migration-v8.sql
+|   `-- supabase-migration-v10.sql
 `-- server
 |   `-- src
 |       |-- config
@@ -255,7 +255,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
    cp server/.env.example server/.env
    ```
 4. Fill the server env values for Supabase and ImageKit.
-5. Apply the Supabase migrations in `docs/` in order, including `docs/supabase-migration-v6.sql` for custom expiry extension.
+5. Apply the Supabase migrations in `docs/` in order, including `docs/supabase-migration-v10.sql` for burn-after-read messages.
 6. Run the app:
    ```bash
    npm run dev
@@ -333,7 +333,9 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Room expiry       | Expired rooms are cleaned by a cron job every 15 minutes                 |
 | Termination       | Creator termination deletes the room and cascades related data           |
 | Message edit      | Text messages can be edited by their sender for 2 minutes                |
-| Message delete    | Message row is removed and media cleanup is attempted for image or voice |
+| Message delete    | Deleted messages persist as tombstones across refreshes                  |
+| Panic wipe        | Creator wipe clears all room messages and shared media, but keeps the room open |
+| Burn-after-read   | Burn messages are deleted after an active non-sender reads them          |
 | Leave room        | Leave marks membership as left and does not hard-delete history          |
 | Realtime recovery | Users must rejoin the socket room after session state changes            |
 
@@ -367,11 +369,10 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Priority | Candidate feature             |
 | -------- | ----------------------------- |
-| High     | Message reactions             |
-| High     | Reply and thread support      |
-| High     | Read receipts                 |
+| High     | One-time invite links         |
+| High     | Room lock mode                |
+| High     | Trust phrase verification     |
 | Medium   | Search within room messages   |
 | Medium   | Media fullscreen preview      |
-| Medium   | Room pinning                  |
 | Medium   | Voice playback speed controls |
 | Low      | QR invite sharing             |

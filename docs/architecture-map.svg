@@ -1,6 +1,6 @@
 <svg width="1200" height="520" viewBox="0 0 1200 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">NullChannel architecture map</title>
-  <desc id="desc">Client communicates with Express and Socket.io, both use Supabase, Express uses ImageKit, and cleanup plus creator expiry extension keep rooms short-lived.</desc>
+  <desc id="desc">Client communicates with Express and Socket.io, both use Supabase, Express uses ImageKit, and cleanup, pinning, burn-after-read, and panic wipe keep rooms short-lived and controlled.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0L10 5L0 10Z" fill="#21d4fd" />
@@ -26,23 +26,23 @@
 
   <rect class="panel" x="430" y="105" width="220" height="100" rx="12" />
   <text class="text" x="540" y="147" text-anchor="middle">Express API</text>
-  <text class="small" x="540" y="175" text-anchor="middle">REST endpoints</text>
+  <text class="small" x="540" y="175" text-anchor="middle">REST, pin, wipe, burn</text>
 
   <rect class="panel" x="430" y="310" width="220" height="100" rx="12" />
   <text class="text" x="540" y="352" text-anchor="middle">Socket.io</text>
-  <text class="small" x="540" y="380" text-anchor="middle">Realtime server</text>
+  <text class="small" x="540" y="380" text-anchor="middle">Realtime, reactions, tombstones</text>
 
   <rect class="data" x="800" y="190" width="230" height="100" rx="12" />
   <text class="text" x="915" y="232" text-anchor="middle">Supabase</text>
-  <text class="small" x="915" y="260" text-anchor="middle">PostgreSQL data</text>
+  <text class="small" x="915" y="260" text-anchor="middle">Rooms, messages, reactions</text>
 
   <rect class="data" x="800" y="60" width="230" height="90" rx="12" />
   <text class="text" x="915" y="98" text-anchor="middle">ImageKit</text>
-  <text class="small" x="915" y="124" text-anchor="middle">Media storage</text>
+  <text class="small" x="915" y="124" text-anchor="middle">Media, files, cleanup</text>
 
   <rect class="panel" x="800" y="365" width="230" height="90" rx="12" />
   <text class="text" x="915" y="403" text-anchor="middle">Cleanup Job</text>
-  <text class="small" x="915" y="429" text-anchor="middle">Expiry removal</text>
+  <text class="small" x="915" y="429" text-anchor="middle">Expiry, wipe cleanup</text>
 
   <path class="line" d="M290 218C340 190 365 162 430 155" />
   <text class="small" x="350" y="178" text-anchor="middle">REST</text>

@@ -1,6 +1,6 @@
 <svg width="1200" height="560" viewBox="0 0 1200 560" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">NullChannel database relationship graph</title>
-  <desc id="desc">The rooms table owns messages and room_members through room_id foreign keys. Rooms also track whether their one-time expiry extension has been used. Messages store text, image, and voice records. Room members track active participants by left_at.</desc>
+  <desc id="desc">The rooms table owns messages and room_members through room_id foreign keys. Rooms also track pinned_message_id and whether their one-time expiry extension has been used. Messages store text, image, voice, file, deletion tombstones, reply targets, and burn-after-read flags. Room members track active participants by left_at. Message reactions are stored separately per sender and emoji.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0L10 5L0 10Z" fill="#3ecf8e" />
@@ -29,8 +29,8 @@
   <text class="field" x="500" y="195">code varchar(8) unique</text>
   <text class="field" x="500" y="225">creator_id text</text>
   <text class="field" x="500" y="255">room_type private | group</text>
-  <text class="field" x="500" y="285">room_name, expiry_extended</text>
-  <text class="field" x="500" y="315">expires_at</text>
+  <text class="field" x="500" y="285">room_name, pinned_message_id</text>
+  <text class="field" x="500" y="315">expiry_extended, expires_at</text>
 
   <rect class="table" x="80" y="340" width="370" height="170" rx="12" />
   <text class="head" x="265" y="378" text-anchor="middle">messages</text>
@@ -40,6 +40,8 @@
   <text class="field" x="150" y="445">room_id -> rooms.id</text>
   <text class="field" x="150" y="475">sender_id, sender_name</text>
   <text class="field" x="150" y="505">type, content, file_url, file_path</text>
+  <text class="muted" x="150" y="532">file_name, file_size, mime_type, reply_to_message_id</text>
+  <text class="muted" x="150" y="552">deleted, deleted_by, deleted_at, burn_after_read</text>
 
   <rect class="table" x="750" y="340" width="370" height="170" rx="12" />
   <text class="head" x="935" y="378" text-anchor="middle">room_members</text>
@@ -49,6 +51,7 @@
   <text class="field" x="820" y="445">room_id -> rooms.id</text>
   <text class="field" x="820" y="475">sender_id, sender_name</text>
   <text class="field" x="820" y="505">joined_at, left_at</text>
+  <text class="muted" x="820" y="532">Active members only when left_at is null</text>
 
   <path class="line" d="M500 300C430 330 365 350 335 340" />
   <text class="muted" x="365" y="327" text-anchor="middle">on delete cascade</text>

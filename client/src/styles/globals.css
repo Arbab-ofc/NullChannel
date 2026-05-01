@@ -205,23 +205,25 @@ body {
 
 .message-delete-button {
   display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: center;
   border: 1px solid hsl(var(--punch) / 0.65);
   background: hsl(var(--panel));
+  box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
   color: hsl(var(--punch));
-  padding: 0.2rem 0.4rem;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  padding: 0;
   opacity: 0.78;
-  transition: opacity 140ms ease, filter 140ms ease;
+  transition: none;
 }
 
-.message-delete-button:hover {
-  opacity: 1;
-  filter: brightness(1.08);
+.message-delete-button:hover,
+.message-delete-button:active {
+  box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  filter: none;
+  opacity: 0.78;
+  transform: none;
 }
 
 .message-delete-button:disabled {
@@ -263,6 +265,9 @@ body {
 
 .composer-action-button,
 .composer-send-button {
+  --composer-shadow-rest: 2px 2px 0 hsl(var(--shadow-offset));
+  --composer-shadow-hover: 3px 3px 0 hsl(var(--punch));
+  --composer-shadow-active: 1px 1px 0 hsl(var(--punch));
   appearance: none;
   box-sizing: border-box;
   display: inline-flex;
@@ -274,7 +279,7 @@ body {
   gap: 0.5rem;
   border: 2px solid hsl(var(--panel-border));
   background: hsl(var(--bg));
-  box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  box-shadow: var(--composer-shadow-rest);
   color: hsl(var(--muted));
   padding: 0 0.75rem;
   font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
@@ -303,28 +308,28 @@ body {
 .composer-send-button {
   border-color: hsl(var(--cyan));
   background: hsl(var(--cyan) / 0.12);
-  box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  box-shadow: var(--composer-shadow-rest);
   color: hsl(var(--cyan));
 }
 
-.composer-action-button:hover:not(:disabled),
-.composer-send-button:hover:not(:disabled) {
-  box-shadow: 3px 3px 0 hsl(var(--shadow-offset));
-  color: hsl(var(--text));
+.composer-action-button:hover:not(:disabled):not(.composer-control-disabled),
+.composer-send-button:hover:not(:disabled):not(.composer-control-disabled) {
+  box-shadow: var(--composer-shadow-hover);
   filter: none;
 }
 
-.composer-send-button:hover:not(:disabled) {
+.composer-send-button:hover:not(:disabled):not(.composer-control-disabled) {
   color: hsl(var(--cyan));
 }
 
-.composer-action-button:active:not(:disabled),
-.composer-send-button:active:not(:disabled) {
-  box-shadow: 1px 1px 0 hsl(var(--shadow-offset));
+.composer-action-button:active:not(:disabled):not(.composer-control-disabled),
+.composer-send-button:active:not(:disabled):not(.composer-control-disabled) {
+  box-shadow: var(--composer-shadow-active);
   transform: translate(1px, 1px);
 }
 
 .composer-action-button:disabled,
+.composer-action-button.composer-control-disabled,
 .composer-send-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -513,6 +518,34 @@ body {
   box-shadow: 5px 5px 0 hsl(var(--punch));
 }
 
+:root.light .message-delete-button,
+:root.light .message-delete-button:hover,
+:root.light .message-delete-button:active {
+  box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  filter: none;
+  opacity: 0.78;
+  transform: none;
+}
+
+:root.light .composer-action-button,
+:root.light .composer-send-button,
+:root.light .composer-action-button:hover,
+:root.light .composer-send-button:hover,
+:root.light .composer-action-button:active,
+:root.light .composer-send-button:active {
+  box-shadow: var(--composer-shadow-rest);
+}
+
+:root.light .composer-action-button:hover:not(:disabled):not(.composer-control-disabled),
+:root.light .composer-send-button:hover:not(:disabled):not(.composer-control-disabled) {
+  box-shadow: var(--composer-shadow-hover);
+}
+
+:root.light .composer-action-button:active:not(:disabled):not(.composer-control-disabled),
+:root.light .composer-send-button:active:not(:disabled):not(.composer-control-disabled) {
+  box-shadow: var(--composer-shadow-active);
+}
+
 :root.light .retro-upload-button:hover {
   box-shadow: 5px 5px 0 hsl(var(--punch));
 }
@@ -541,18 +574,18 @@ body {
     transform: translateX(-110%);
   }
 
-  .composer-action-button:hover:not(:disabled),
-  .composer-send-button:hover:not(:disabled),
-  .composer-action-button:active:not(:disabled),
-  .composer-send-button:active:not(:disabled) {
-    box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  .composer-action-button:hover:not(:disabled):not(.composer-control-disabled),
+  .composer-send-button:hover:not(:disabled):not(.composer-control-disabled),
+  .composer-action-button:active:not(:disabled):not(.composer-control-disabled),
+  .composer-send-button:active:not(:disabled):not(.composer-control-disabled) {
+    box-shadow: var(--composer-shadow-rest);
     filter: none;
     transform: none;
   }
 
-  .composer-send-button:hover:not(:disabled),
-  .composer-send-button:active:not(:disabled) {
-    box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+  .composer-send-button:hover:not(:disabled):not(.composer-control-disabled),
+  .composer-send-button:active:not(:disabled):not(.composer-control-disabled) {
+    box-shadow: var(--composer-shadow-rest);
   }
 
   .composer-action-button,
@@ -561,12 +594,12 @@ body {
     height: 2.625rem;
     flex: 0 0 2.625rem;
     max-width: none;
-    box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+    box-shadow: var(--composer-shadow-rest);
     padding: 0;
   }
 
   .composer-send-button {
-    box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+    box-shadow: var(--composer-shadow-rest);
   }
 
   .composer-action-button svg,
@@ -585,11 +618,6 @@ body {
     white-space: nowrap;
   }
 
-  .message-delete-button:hover {
-    opacity: 0.78;
-    filter: none;
-  }
-
   :root.light button:hover,
   :root.light button:active,
   :root.light .retro-upload-button:hover,
@@ -605,6 +633,11 @@ body {
   :root.light .composer-send-button:hover,
   :root.light .composer-action-button:active,
   :root.light .composer-send-button:active {
-    box-shadow: 2px 2px 0 hsl(var(--shadow-offset));
+    box-shadow: var(--composer-shadow-rest);
+  }
+
+  :root.light .composer-action-button:hover:not(:disabled):not(.composer-control-disabled),
+  :root.light .composer-send-button:hover:not(:disabled):not(.composer-control-disabled) {
+    box-shadow: var(--composer-shadow-rest);
   }
 }

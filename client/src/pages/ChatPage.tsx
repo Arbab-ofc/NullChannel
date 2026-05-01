@@ -669,19 +669,19 @@ export default function ChatPage() {
                     onClick={() => startEditMessage(m)}
                     disabled={editingBusy}
                     aria-label="Edit message"
+                    title="Edit message"
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                    <span>Edit</span>
                   </button>
                 )}
                 <button
                   className="message-delete-button"
                   onClick={() => deleteMessage(m.id)}
                   disabled={!!deletingMessageIds[m.id]}
-                  aria-label="Delete message"
+                  aria-label={deletingMessageIds[m.id] ? 'Deleting message' : 'Delete message'}
+                  title={deletingMessageIds[m.id] ? 'Deleting message' : 'Delete message'}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  <span>{deletingMessageIds[m.id] ? 'Deleting' : 'Delete'}</span>
                 </button>
               </div>
             )}
@@ -739,7 +739,7 @@ export default function ChatPage() {
           </div>
         )}
         <div className="composer-actions">
-          <label className={`composer-action-button composer-action-button--image ${uploadingImage ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+          <label className={`composer-action-button composer-action-button--image ${uploadingImage || !isJoined || recordingVoice ? 'composer-control-disabled' : ''} ${uploadingImage ? 'cursor-wait opacity-70' : isJoined && !recordingVoice ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
             <ImagePlus className="h-4 w-4" />
             <span className="composer-label">{uploadingImage ? '[UP]' : '[IMG]'}</span>
             <input

@@ -581,7 +581,13 @@ export default function ChatPage() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="code-font hidden text-xs tracking-[0.2em] text-cyan sm:block">NULLCHANNEL / SESSION ACTIVE</p>
-            <p className="mt-1 text-sm font-semibold uppercase">{room.room_name}</p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-5">
+              <p className="min-w-0 truncate text-sm font-semibold uppercase">{room.room_name}</p>
+              <span className={`connection-status connection-status--inline hidden xl:inline-flex ${isJoined ? '' : 'connection-status--idle'}`}>
+                {isJoined && <Radio className="connection-status__icon" />}
+                {isJoined ? 'Connected' : 'Not Joined'}
+              </span>
+            </div>
             <p className="code-font mt-1 truncate text-xs tracking-widest sm:text-sm">CHANNEL ID: {room.code}</p>
           </div>
           <div className="shrink-0 text-right">
@@ -601,10 +607,9 @@ export default function ChatPage() {
           <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
           <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
-          {isJoined && <span className="ml-auto inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span>}
         </div>
         <div className="mt-2 flex items-center justify-between gap-2 sm:mt-4 xl:hidden">
-          {isJoined ? <span className="inline-flex items-center gap-2 border-2 border-cyan bg-panel px-3 py-2 text-xs uppercase tracking-wider"><Radio className="h-4 w-4 text-cyan" />Connected</span> : <span className="inline-flex items-center gap-2 border-2 border-accent bg-panel px-3 py-2 text-xs uppercase tracking-wider text-muted">Not Joined</span>}
+          {isJoined ? <span className="connection-status"><Radio className="connection-status__icon" />Connected</span> : <span className="connection-status connection-status--idle">Not Joined</span>}
           <button
             className="neo-action inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-accent bg-panel"
             onClick={() => setMenuOpen((v) => !v)}

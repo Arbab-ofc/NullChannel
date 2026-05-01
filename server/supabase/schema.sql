@@ -6,6 +6,7 @@ create table if not exists rooms (
   creator_id text not null,
   room_type text not null default 'private' check (room_type in ('private', 'group')),
   room_name text not null,
+  expiry_extended boolean not null default false,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '24 hours')
 );

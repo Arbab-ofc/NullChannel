@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send } from 'lucide-react';
+import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
@@ -10,7 +10,7 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
 type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: 'text'|'image'|'voice'; file_url?: string; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
-type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string };
+type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string; expiry_extended?: boolean };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
 type Participant = { sender_id: string; sender_name: string; joined_at: string };
@@ -48,6 +48,9 @@ export default function ChatPage() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [terminateBusy, setTerminateBusy] = useState(false);
+  const [extendBusy, setExtendBusy] = useState(false);
+  const [extendModalOpen, setExtendModalOpen] = useState(false);
+  const [extendMinutes, setExtendMinutes] = useState('30');
   const [joinError, setJoinError] = useState('');
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [expiredNotice, setExpiredNotice] = useState(false);
@@ -247,6 +250,14 @@ export default function ChatPage() {
       loadMyRooms().catch(() => undefined);
       showExpiredPopup(payload.reason === 'terminated-by-creator' ? 'terminated-by-creator' : 'expired');
     });
+    socket.on('room-extended', (payload: { code?: string; expiresAt?: string; extendByMinutes?: number } = {}) => {
+      if (payload.code !== room.code || !payload.expiresAt) return;
+      const expiresAt = payload.expiresAt;
+      setRoom((current) => (current && current.code === room.code ? { ...current, expires_at: expiresAt, expiry_extended: true } : current));
+      loadMyRooms().catch(() => undefined);
+      const minutes = payload.extendByMinutes ?? 0;
+      setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: minutes > 0 ? `Room extended by ${minutes} min` : 'Room expiry extended' }]);
+    });
 
     if ((isJoined || room.creator_id === senderId) && !!senderName) {
       socket.emit('join-room', { roomCode: room.code, senderId, senderName });
@@ -261,6 +272,7 @@ export default function ChatPage() {
       socket.off('user-typing');
       socket.off('message-deleted');
       socket.off('message-edited');
+      socket.off('room-extended');
       socket.off('room-joined');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
@@ -495,6 +507,28 @@ export default function ChatPage() {
     }
   };
 
+  const extendRoomExpiry = async () => {
+    const extendByMinutes = Number(extendMinutes);
+    if (!Number.isInteger(extendByMinutes) || extendByMinutes < 5 || extendByMinutes > 1440) {
+      showToast('Enter 5 to 1440 minutes');
+      return;
+    }
+    if (!room || room.creator_id !== senderId || room.expiry_extended || extendBusy) return;
+    setExtendBusy(true);
+    try {
+      const res = await api.post(`/rooms/${room.code}/extend`, { senderId, extendByMinutes });
+      const updated = res.data.data as Room;
+      setRoom(updated);
+      await loadMyRooms();
+      setExtendModalOpen(false);
+      showToast(`Extended by ${extendByMinutes} min`);
+    } catch {
+      showToast('Extend failed');
+    } finally {
+      setExtendBusy(false);
+    }
+  };
+
   const terminateRoom = async () => {
     if (!room || terminateBusy) return;
     setTerminateBusy(true);
@@ -576,6 +610,34 @@ export default function ChatPage() {
         </Button>
       </div>
     </div>}
+    {extendModalOpen && room.creator_id === senderId && (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+        <div className="neo-panel w-full max-w-sm p-5">
+          <p className="code-font text-xs tracking-[0.2em] text-cyan">EXTEND EXPIRY</p>
+          <h3 className="mt-2 text-xl font-bold uppercase">Custom Duration</h3>
+          <input
+            value={extendMinutes}
+            onChange={(e) => setExtendMinutes(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            placeholder="Minutes"
+            className="mt-4 h-11 w-full border-2 border-accent bg-bg px-3 text-sm"
+            inputMode="numeric"
+            disabled={extendBusy}
+            autoFocus
+          />
+          <p className="mt-2 text-xs text-muted">Enter 5 to 1440 minutes. This can be used once per room.</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button onClick={() => setExtendModalOpen(false)} disabled={extendBusy}>Cancel</Button>
+            <Button
+              className="border-cyan text-cyan"
+              onClick={extendRoomExpiry}
+              disabled={extendBusy || !extendMinutes || Number(extendMinutes) < 5 || Number(extendMinutes) > 1440}
+            >
+              {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
     <section className="order-1 flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden sm:gap-3 lg:order-1 lg:gap-4">
       <header className="neo-panel shrink-0 p-2 sm:p-4 lg:p-5">
         <div className="flex items-start justify-between gap-3">
@@ -606,6 +668,17 @@ export default function ChatPage() {
           <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
           <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
           <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
+          {room.creator_id === senderId && (
+            <Button
+              className="border-cyan text-cyan"
+              onClick={() => setExtendModalOpen(true)}
+              disabled={!!room.expiry_extended || !!extendBusy}
+              title={room.expiry_extended ? 'This channel has already been extended' : 'Extend expiry'}
+            >
+              <TimerReset className="mr-2 inline h-4 w-4" />
+              {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend'}
+            </Button>
+          )}
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
         </div>
         <div className="mt-2 flex items-center justify-between gap-2 sm:mt-4 xl:hidden">
@@ -640,6 +713,17 @@ export default function ChatPage() {
               <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
               <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
               <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
+              {room.creator_id === senderId && (
+                <Button
+                  className="border-cyan text-cyan"
+                  onClick={() => setExtendModalOpen(true)}
+                  disabled={!!room.expiry_extended || !!extendBusy}
+                  title={room.expiry_extended ? 'This channel has already been extended' : 'Extend expiry'}
+                >
+                  <TimerReset className="mr-2 inline h-4 w-4" />
+                  {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend Expiry'}
+                </Button>
+              )}
               {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
             </div>
           </aside>

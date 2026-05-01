@@ -21,3 +21,7 @@ export const emitMessageDeleted = (roomId: string, payload: { messageId: string;
 export const emitMessageEdited = (roomId: string, payload: { messageId: string; content: string; editedBy: string }) => {
   ioRef?.to(roomId).emit('message-edited', payload);
 };
+
+export const emitRoomExtended = (roomId: string, payload: { code: string; expiresAt: string; extendByMinutes: number }) => {
+  ioRef?.to(roomId).emit('room-extended', payload);
+};

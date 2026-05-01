@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
-import { createRoom, getRoomByCode, terminateRoom } from '../services/room.service.js';
+import { createRoom, extendRoomExpiry, getRoomByCode, terminateRoom } from '../services/room.service.js';
 import { deleteMessageById, getMessageById, listMessages, updateMessageContent } from '../services/message.service.js';
 import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
-import { createRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
+import { createRoomSchema, extendRoomSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
 import { deleteMessageSchema, editMessageSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, leaveMembership } from '../services/membership.service.js';
-import { emitMessageDeleted, emitMessageEdited, emitRoomExpired, emitRoomExpiredByCode } from '../sockets/emitter.js';
+import { emitMessageDeleted, emitMessageEdited, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -138,6 +138,34 @@ export const terminateRoomController = async (req: Request, res: Response) => {
   emitRoomExpired(result.roomId, { reason: 'terminated-by-creator' });
   emitRoomExpiredByCode(result.code, { reason: 'terminated-by-creator' });
   res.json(successResponse(result));
+};
+
+export const extendRoomController = async (req: Request, res: Response) => {
+  const parsed = extendRoomSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId and extendByMinutes are required.'));
+    return;
+  }
+  const code = String(req.params.code ?? '').toUpperCase();
+  const result = await extendRoomExpiry(code, parsed.data.senderId, parsed.data.extendByMinutes);
+  if ('error' in result) {
+    if (result.error === 'FORBIDDEN') {
+      res.status(403).json(errorResponse('FORBIDDEN', 'Only room creator can extend this channel.'));
+      return;
+    }
+    if (result.error === 'EXTENSION_USED') {
+      res.status(409).json(errorResponse('EXTENSION_USED', 'This channel has already been extended.'));
+      return;
+    }
+    res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
+    return;
+  }
+  emitRoomExtended(result.room.id, {
+    code: result.room.code,
+    expiresAt: result.room.expires_at,
+    extendByMinutes: result.extendByMinutes
+  });
+  res.json(successResponse(result.room));
 };
 
 export const getMyRoomsController = async (req: Request, res: Response) => {

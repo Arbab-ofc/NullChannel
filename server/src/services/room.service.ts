@@ -3,7 +3,7 @@ import { generateCode } from '../utils/generateCode.js';
 import { cleanupRoomsByIds } from './cleanup.service.js';
 import { joinMembership } from './membership.service.js';
 
-const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at';
+const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at, expiry_extended';
 
 export const createRoom = async (creatorId: string, creatorName: string, roomType: 'private' | 'group', roomName: string, expiresInMinutes: number) => {
   const { count, error: countError } = await supabase
@@ -41,6 +41,9 @@ export const createRoom = async (creatorId: string, creatorName: string, roomTyp
   if (lastErrorMessage.includes('room_name')) {
     throw new Error('Database schema is outdated. Run docs/supabase-migration-v5.sql and retry.');
   }
+  if (lastErrorMessage.includes('expiry_extended')) {
+    throw new Error('Database schema is outdated. Run docs/supabase-migration-v6.sql and retry.');
+  }
   throw new Error(lastErrorMessage);
 };
 
@@ -52,6 +55,30 @@ export const getRoomByCode = async (code: string) => {
     .gt('expires_at', new Date().toISOString())
     .maybeSingle();
   return data;
+};
+
+export const extendRoomExpiry = async (code: string, senderId: string, extendByMinutes: number) => {
+  const room = await getRoomByCode(code);
+  if (!room) return { error: 'ROOM_NOT_FOUND' as const };
+  if (room.creator_id !== senderId) return { error: 'FORBIDDEN' as const };
+  if (room.expiry_extended) return { error: 'EXTENSION_USED' as const };
+
+  const currentExpiryMs = new Date(room.expires_at).getTime();
+  const baseMs = Number.isFinite(currentExpiryMs) ? Math.max(currentExpiryMs, Date.now()) : Date.now();
+  const expiresAt = new Date(baseMs + extendByMinutes * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('rooms')
+    .update({ expires_at: expiresAt, expiry_extended: true })
+    .eq('id', room.id)
+    .eq('expiry_extended', false)
+    .select(roomSelectWithType)
+    .maybeSingle();
+  if (error?.message?.includes('expiry_extended')) {
+    throw new Error('Database schema is outdated. Run docs/supabase-migration-v6.sql and retry.');
+  }
+  if (error) throw error;
+  if (!data) return { error: 'EXTENSION_USED' as const };
+  return { room: data, extendByMinutes };
 };
 
 export const terminateRoom = async (code: string, senderId: string) => {

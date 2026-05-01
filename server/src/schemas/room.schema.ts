@@ -16,6 +16,11 @@ export const terminateRoomSchema = z.object({
   senderId: z.string().uuid()
 });
 
+export const extendRoomSchema = z.object({
+  senderId: z.string().uuid(),
+  extendByMinutes: z.coerce.number().int().min(5).max(1440)
+});
+
 export const senderParamSchema = z.object({
   senderId: z.string().uuid()
 });

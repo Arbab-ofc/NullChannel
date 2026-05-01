@@ -5,6 +5,7 @@ import {
   createRoomController,
   deleteMessageController,
   editMessageController,
+  extendRoomController,
   getMessagesController,
   getMyRoomsController,
   getRoomController,
@@ -20,6 +21,7 @@ router.get('/rooms/:code/messages', roomLookupLimiter, asyncHandler(getMessagesC
 router.patch('/rooms/:code/messages/:messageId', asyncHandler(editMessageController));
 router.delete('/rooms/:code/messages/:messageId', asyncHandler(deleteMessageController));
 router.get('/rooms/:code/participants', roomLookupLimiter, asyncHandler(participantsController));
+router.post('/rooms/:code/extend', asyncHandler(extendRoomController));
 router.post('/rooms/:code/terminate', asyncHandler(terminateRoomController));
 router.post('/rooms/:code/leave', asyncHandler(leaveRoomController));
 router.get('/users/:senderId/rooms', roomLookupLimiter, asyncHandler(getMyRoomsController));

@@ -134,3 +134,7 @@ The full verified run passed 138 tests: 94 backend (including 12 real PostgreSQL
 ## Release isolation
 
 Development is isolated on feat/webrtc-voice-calling from fbd6deb0edfe56818ba62f1173b009bb11c9c578. No main/production-readiness commit, merge, force push or live deployment is authorized. Repository automation was inspected: no .github workflow exists, and vercel.json has build settings only. The owner confirmed feature-branch pushes do not deploy production. The current VPS services, filesystem, database credentials, Nginx and Cloudflare Tunnel were not accessed or modified.
+
+## Interactive local testing
+
+Run `npm run voice:manual` for real microphone/audio calls between separate Chrome profiles, with disposable in-memory data and no provider credentials. See [exact browser steps and fixture isolation](VOICE_CALLING_MANUAL.md).

@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "reconcile-media": "tsx src/scripts/reconcile-media.ts"
+    "reconcile-media": "tsx src/scripts/reconcile-media.ts",
+    "typecheck:manual": "tsc --noEmit -p manual/tsconfig.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",

@@ -382,3 +382,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Medium   | Media fullscreen preview      |
 | Medium   | Voice playback speed controls |
 | Low      | QR invite sharing             |
+
+## Private-room voice calling
+
+Native, audio-only one-to-one WebRTC calls use the existing authenticated Socket.IO connection. No recording, audio storage or media relay is added. See [setup, signaling, security, network limits and test instructions](docs/VOICE_CALLING.md). STUN-only calls can fail on restrictive networks; TURN is not included. This feature remains isolated on `feat/webrtc-voice-calling` and is not deployed.

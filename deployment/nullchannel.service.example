@@ -1,0 +1,30 @@
+[Unit]
+Description=NullChannel anonymous messaging backend
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nullchannel
+Group=nullchannel
+WorkingDirectory=/srv/nullchannel/server
+EnvironmentFile=/etc/nullchannel/server.env
+# Replace this path with the existing compatible Node executable, without replacing global Node.
+ExecStart=/usr/bin/node /srv/nullchannel/server/dist/server.js
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nullchannel
+
+[Install]
+WantedBy=multi-user.target

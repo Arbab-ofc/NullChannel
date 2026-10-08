@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
-export const roomCodeSchema = z.object({
+export const roomCodeSchema = z.strictObject({
   code: z.string().trim().length(8).regex(/^[A-Z0-9]+$/)
 });
 
-export const createRoomSchema = z.object({
+export const createRoomSchema = z.strictObject({
   senderId: z.string().uuid(),
   senderName: z.string().trim().min(2).max(24),
   roomType: z.enum(['private', 'group']).default('private'),
@@ -12,20 +12,20 @@ export const createRoomSchema = z.object({
   expiresInMinutes: z.union([z.literal(15), z.literal(60), z.literal(360), z.literal(1440)]).default(1440)
 });
 
-export const terminateRoomSchema = z.object({
+export const terminateRoomSchema = z.strictObject({
   senderId: z.string().uuid()
 });
 
-export const extendRoomSchema = z.object({
+export const extendRoomSchema = z.strictObject({
   senderId: z.string().uuid(),
   extendByMinutes: z.coerce.number().int().min(5).max(1440)
 });
 
-export const pinMessageSchema = z.object({
+export const pinMessageSchema = z.strictObject({
   senderId: z.string().uuid(),
   messageId: z.string().uuid().nullable().optional()
 });
 
-export const senderParamSchema = z.object({
+export const senderParamSchema = z.strictObject({
   senderId: z.string().uuid()
 });

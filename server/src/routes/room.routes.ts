@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createRoomLimiter, roomLookupLimiter } from '../middlewares/rateLimit.middleware.js';
+import { createRoomLimiter, roomLookupLimiter, identityMutationLimiter, identityManagementLimiter } from '../middlewares/rateLimit.middleware.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   burnReadMessageController,
@@ -18,7 +18,17 @@ import {
   wipeRoomController
 } from '../controllers/room.controller.js';
 
+import { requireMembership } from '../middlewares/auth.middleware.js';
 const router = Router();
+router.use((req, res, next) => {
+  if (['GET','HEAD','OPTIONS'].includes(req.method)) return next();
+  return (req.path.includes('/messages/') ? identityMutationLimiter : identityManagementLimiter)(req, res, next);
+});
+router.use('/rooms/:code', (req, res, next) => {
+  // Only minimal join metadata is public to an authenticated visitor.
+  if (req.method === 'GET' && req.path === '/') return next();
+  return requireMembership(req, res, next);
+});
 router.post('/rooms', createRoomLimiter, asyncHandler(createRoomController));
 router.get('/rooms/:code', roomLookupLimiter, asyncHandler(getRoomController));
 router.get('/rooms/:code/messages', roomLookupLimiter, asyncHandler(getMessagesController));

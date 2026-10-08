@@ -9,10 +9,13 @@
     "start": "node dist/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reconcile-media": "tsx src/scripts/reconcile-media.ts",
+    "typecheck:manual": "tsc --noEmit -p manual/tsconfig.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",
+    "axios": "^1.11.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
@@ -36,9 +39,10 @@
     "@typescript-eslint/eslint-plugin": "^8.39.1",
     "@typescript-eslint/parser": "^8.39.1",
     "eslint": "^9.34.0",
+    "playwright": "^1.64.0",
     "supertest": "^7.1.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.3"
   }
 }

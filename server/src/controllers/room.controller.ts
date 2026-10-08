@@ -1,12 +1,11 @@
 import type { Request, Response } from 'express';
 import { createRoom, extendRoomExpiry, getRoomByCode, pinRoomMessage, terminateRoom, wipeRoomMessages } from '../services/room.service.js';
 import { deleteMessageById, getMessageById, hardDeleteMessageById, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
-import { deleteMediaByFileId } from '../services/media.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, extendRoomSchema, pinMessageSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
 import { burnReadSchema, deleteMessageSchema, editMessageSchema, reactionSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, isActiveMember, leaveMembership } from '../services/membership.service.js';
-import { emitMessageBurned, emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended, emitRoomWiped } from '../sockets/emitter.js';
+import { onlineIdentities, revokeRoomSockets, emitMessageBurned, emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended, emitRoomWiped } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -34,7 +33,8 @@ export const getRoomController = async (req: Request, res: Response) => {
     res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
     return;
   }
-  res.json(successResponse(room));
+  const member = await isActiveMember(room.id, res.locals.identity);
+  res.json(successResponse(member ? room : { code: room.code, room_name: room.room_name, room_type: room.room_type, expires_at: room.expires_at, creator_id: null }));
 };
 
 export const getMessagesController = async (req: Request, res: Response) => {
@@ -75,13 +75,6 @@ export const deleteMessageController = async (req: Request, res: Response) => {
     return;
   }
   const deletedByName = message.sender_name ?? `User-${message.sender_id.slice(0, 6)}`;
-  if (message.file_path) {
-    try {
-      await deleteMediaByFileId(message.file_path);
-    } catch {
-      // Media deletion is best-effort; the tombstone should still be persisted.
-    }
-  }
   await deleteMessageById(message.id, message.sender_id, deletedByName);
   emitMessageDeleted(room.id, { messageId: message.id, deletedBy: message.sender_id, deletedByName });
   res.json(successResponse({ deleted: true, messageId: message.id, deletedBy: message.sender_id, deletedByName }));
@@ -181,13 +174,6 @@ export const burnReadMessageController = async (req: Request, res: Response) => 
     res.status(403).json(errorResponse('JOIN_REQUIRED', 'Join this channel before reading burn-after-read messages.'));
     return;
   }
-  if (message.file_path) {
-    try {
-      await deleteMediaByFileId(message.file_path);
-    } catch {
-      // Burn cleanup should still remove the message row.
-    }
-  }
   await hardDeleteMessageById(message.id);
   emitMessageBurned(room.id, { messageId: message.id });
   res.json(successResponse({ burned: true, messageId: message.id }));
@@ -263,7 +249,7 @@ export const wipeRoomController = async (req: Request, res: Response) => {
     res.status(404).json(errorResponse('ROOM_NOT_FOUND', 'Channel not found or expired.'));
     return;
   }
-  emitRoomWiped(result.roomId, { code: result.code, wipedMessages: result.wipedMessages });
+  emitRoomWiped(result.roomId, { code: result.code, wipedMessages: result.wipedMessages, wipedAt: result.wipedAt });
   res.json(successResponse(result));
 };
 
@@ -301,7 +287,7 @@ export const getMyRoomsController = async (req: Request, res: Response) => {
     res.status(400).json(errorResponse('VALIDATION_ERROR', 'Invalid sender id.'));
     return;
   }
-  const rooms = await getActiveRoomsForSender(parsed.data.senderId);
+  const rooms = await getActiveRoomsForSender(res.locals.identity);
   res.json(successResponse(rooms));
 };
 
@@ -318,6 +304,7 @@ export const leaveRoomController = async (req: Request, res: Response) => {
     return;
   }
   await leaveMembership(room.id, parsed.data.senderId);
+  await revokeRoomSockets(room.id, room.code, res.locals.identity);
   res.json(successResponse({ left: true }));
 };
 
@@ -329,5 +316,6 @@ export const participantsController = async (req: Request, res: Response) => {
     return;
   }
   const participants = await getParticipantsForRoom(room.id);
-  res.json(successResponse(participants));
+  const online = new Set(await onlineIdentities(room.id));
+  res.json(successResponse(participants.map(member => ({ ...member, online: online.has(member.sender_id) }))));
 };

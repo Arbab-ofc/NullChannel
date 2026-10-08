@@ -12,13 +12,13 @@ export const healthController = (_req: Request, res: Response) => {
 };
 
 export const databaseHealthController = async (_req: Request, res: Response) => {
-  const { error } = await supabase.from('rooms').select('id').limit(1);
+  const { error } = await supabase.from('anonymous_sessions').select('id').limit(1);
 
   if (error) {
     res.status(503).json(successResponse({
       status: 'degraded',
       database: 'down',
-      error: error.message,
+
       timestamp: new Date().toISOString()
     }));
     return;

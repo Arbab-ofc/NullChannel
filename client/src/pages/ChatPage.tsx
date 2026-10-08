@@ -929,7 +929,7 @@ export default function ChatPage() {
             <button type="button" className="chat-menu-toggle neo-action xl:hidden" onClick={() => setMenuOpen(v => !v)} aria-label="Toggle chat menu" aria-expanded={menuOpen} aria-controls="chat-command-center"><Menu className="h-5 w-5" /></button>
           </div>
           <span role="status" className={`connection-status ${isJoined && connected ? '' : 'connection-status--idle'}`}>
-            {isJoined && connected && <Radio className="connection-status__icon" />}{!isJoined ? 'Not Joined' : connected ? 'Connected' : 'Reconnecting…'}
+            {isJoined && connected && <Radio className="connection-status__icon" />}{!isJoined ? 'Not Joined' : connected ? 'Connected' : socket.active ? 'Reconnecting…' : 'Disconnected'}
           </span>
         </div>
         <div className="mt-4 hidden flex-wrap gap-2 xl:flex">

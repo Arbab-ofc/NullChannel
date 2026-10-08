@@ -296,6 +296,8 @@ it.skipIf(process.env.RUN_WEBRTC_BROWSER !== '1')('two real Chromium contexts ne
     await a.getByText('CHANNEL ID: TEST1234',{ exact: true }).waitFor();
     expect(await a.getByRole('button',{ name: 'Start voice call',exact: true }).count()).toBe(0);
     expect(await a.locator('.site-footer').count()).toBe(0);
+    for (const socket of io.sockets.sockets.values()) if (socket.data.identity === state.identities[0]) socket.disconnect(true);
+    await a.locator('.connection-status').filter({ hasText: 'Disconnected' }).waitFor();
     await b.goto(origin+'/');
     await b.getByText('Designed and developed by',{ exact: false }).waitFor();
     for (const theme of ['dark','light']) {

@@ -1,18 +1,8 @@
 import { supabase } from '../config/supabase.js';
 
 export const joinMembership = async (roomId: string, senderId: string, senderName: string) => {
-  let { error } = await supabase.from('room_members').upsert(
-    { room_id: roomId, sender_id: senderId, sender_name: senderName, left_at: null },
-    { onConflict: 'room_id,sender_id' }
-  );
-  if (error?.message?.includes('sender_name')) {
-    const fallback = await supabase.from('room_members').upsert(
-      { room_id: roomId, sender_id: senderId, left_at: null },
-      { onConflict: 'room_id,sender_id' }
-    );
-    error = fallback.error;
-  }
-  if (error) throw error;
+  const { error: atomicError } = await supabase.rpc('join_room', { p_room: roomId, p_sender: senderId, p_name: senderName });
+  if (atomicError) throw atomicError;
 };
 
 export const leaveMembership = async (roomId: string, senderId: string) => {

@@ -1,8 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { generateCode } from '../utils/generateCode.js';
 import { cleanupRoomsByIds } from './cleanup.service.js';
-import { deleteMediaByFileId } from './media.service.js';
-import { joinMembership } from './membership.service.js';
 
 const roomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at, expiry_extended, pinned_message_id';
 const legacyRoomSelectWithType = 'id, code, creator_id, room_type, room_name, created_at, expires_at, expiry_extended';
@@ -10,54 +8,13 @@ const legacyRoomSelectWithType = 'id, code, creator_id, room_type, room_name, cr
 const withPinnedFallback = <T extends { pinned_message_id?: string | null } | null>(data: T) => data;
 
 export const createRoom = async (creatorId: string, creatorName: string, roomType: 'private' | 'group', roomName: string, expiresInMinutes: number) => {
-  const { count, error: countError } = await supabase
-    .from('rooms')
-    .select('*', { count: 'exact', head: true })
-    .eq('creator_id', creatorId)
-    .eq('room_type', roomType)
-    .gt('expires_at', new Date().toISOString());
-  if (countError) throw countError;
-  if ((count ?? 0) >= 3) {
-    throw new Error(`ROOM_LIMIT_REACHED:${roomType}`);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data, error } = await supabase.rpc('create_room', { p_code: generateCode(), p_sender: creatorId, p_name: creatorName, p_type: roomType, p_room_name: roomName, p_minutes: expiresInMinutes });
+    if (!error && data?.[0]) return data[0];
+    if (error?.message?.includes('ROOM_LIMIT_REACHED')) throw new Error(`ROOM_LIMIT_REACHED:${roomType}`);
+    if (error?.code !== '23505') throw error ?? new Error('Room creation failed');
   }
-
-  let lastErrorMessage = 'Failed to create room';
-  for (let i = 0; i < 5; i += 1) {
-    const code = generateCode();
-    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000).toISOString();
-    let { data, error } = await supabase
-      .from('rooms')
-      .insert({ code, creator_id: creatorId, room_type: roomType, room_name: roomName, expires_at: expiresAt })
-      .select(roomSelectWithType)
-      .single();
-    if (error?.message?.includes('pinned_message_id')) {
-      const fallback = await supabase
-        .from('rooms')
-        .insert({ code, creator_id: creatorId, room_type: roomType, room_name: roomName, expires_at: expiresAt })
-        .select(legacyRoomSelectWithType)
-        .single();
-      data = fallback.data ? { ...fallback.data, pinned_message_id: null } : null;
-      error = fallback.error;
-    }
-    if (!error && data) {
-      await joinMembership(data.id, creatorId, creatorName);
-      return data;
-    }
-    if (error?.message) lastErrorMessage = error.message;
-  }
-  if (lastErrorMessage.includes('creator_id')) {
-    throw new Error('Database schema is outdated. Run docs/supabase-migration-v2.sql and retry.');
-  }
-  if (lastErrorMessage.includes('room_type')) {
-    throw new Error('Database schema is outdated. Run docs/supabase-migration-v4.sql and retry.');
-  }
-  if (lastErrorMessage.includes('room_name')) {
-    throw new Error('Database schema is outdated. Run docs/supabase-migration-v5.sql and retry.');
-  }
-  if (lastErrorMessage.includes('expiry_extended')) {
-    throw new Error('Database schema is outdated. Run docs/supabase-migration-v6.sql and retry.');
-  }
-  throw new Error(lastErrorMessage);
+  throw new Error('Room code allocation failed');
 };
 
 export const getRoomByCode = async (code: string) => {
@@ -75,43 +32,22 @@ export const getRoomByCode = async (code: string) => {
       .gt('expires_at', new Date().toISOString())
       .maybeSingle();
     data = fallback.data ? { ...fallback.data, pinned_message_id: null } : null;
+    error = fallback.error;
   }
+  if (error) throw error;
   return withPinnedFallback(data);
 };
 
 export const extendRoomExpiry = async (code: string, senderId: string, extendByMinutes: number) => {
-  const room = await getRoomByCode(code);
-  if (!room) return { error: 'ROOM_NOT_FOUND' as const };
-  if (room.creator_id !== senderId) return { error: 'FORBIDDEN' as const };
-  if (room.expiry_extended) return { error: 'EXTENSION_USED' as const };
-
-  const currentExpiryMs = new Date(room.expires_at).getTime();
-  const baseMs = Number.isFinite(currentExpiryMs) ? Math.max(currentExpiryMs, Date.now()) : Date.now();
-  const expiresAt = new Date(baseMs + extendByMinutes * 60 * 1000).toISOString();
-  let { data, error } = await supabase
-    .from('rooms')
-    .update({ expires_at: expiresAt, expiry_extended: true })
-    .eq('id', room.id)
-    .eq('expiry_extended', false)
-    .select(roomSelectWithType)
-    .maybeSingle();
-  if (error?.message?.includes('pinned_message_id')) {
-    const fallback = await supabase
-      .from('rooms')
-      .update({ expires_at: expiresAt, expiry_extended: true })
-      .eq('id', room.id)
-      .eq('expiry_extended', false)
-      .select(legacyRoomSelectWithType)
-      .maybeSingle();
-    data = fallback.data ? { ...fallback.data, pinned_message_id: null } : null;
-    error = fallback.error;
+  const { data, error } = await supabase.rpc('extend_room', { p_code: code, p_sender: senderId, p_minutes: extendByMinutes });
+  if (error) {
+    if (error.message.includes('ROOM_NOT_FOUND')) return { error: 'ROOM_NOT_FOUND' as const };
+    if (error.message.includes('FORBIDDEN')) return { error: 'FORBIDDEN' as const };
+    if (error.message.includes('EXTENSION_USED')) return { error: 'EXTENSION_USED' as const };
+    throw error;
   }
-  if (error?.message?.includes('expiry_extended')) {
-    throw new Error('Database schema is outdated. Run docs/supabase-migration-v6.sql and retry.');
-  }
-  if (error) throw error;
-  if (!data) return { error: 'EXTENSION_USED' as const };
-  return { room: data, extendByMinutes };
+  if (!data?.[0]) return { error: 'ROOM_NOT_FOUND' as const };
+  return { room: data[0], extendByMinutes };
 };
 
 export const terminateRoom = async (code: string, senderId: string) => {
@@ -141,41 +77,13 @@ export const pinRoomMessage = async (code: string, senderId: string, messageId: 
 };
 
 export const wipeRoomMessages = async (code: string, senderId: string) => {
-  const room = await getRoomByCode(code);
-  if (!room) return { error: 'ROOM_NOT_FOUND' as const };
-  if (room.creator_id !== senderId) return { error: 'FORBIDDEN' as const };
-
-  const { data: mediaRows, error: mediaError } = await supabase
-    .from('messages')
-    .select('file_path')
-    .eq('room_id', room.id)
-    .not('file_path', 'is', null);
-  if (mediaError) throw mediaError;
-
-  for (const row of mediaRows ?? []) {
-    if (row.file_path) {
-      try {
-        await deleteMediaByFileId(row.file_path);
-      } catch {
-        // Panic wipe is best-effort for remote media; database cleanup still proceeds.
-      }
-    }
+  const { data, error } = await supabase.rpc('wipe_room', { p_code: code, p_sender: senderId });
+  if (error) {
+    if (error.message.includes('FORBIDDEN')) return { error: 'FORBIDDEN' as const };
+    if (error.message.includes('ROOM_NOT_FOUND')) return { error: 'ROOM_NOT_FOUND' as const };
+    throw error;
   }
-
-  const { error: clearPinError } = await supabase
-    .from('rooms')
-    .update({ pinned_message_id: null })
-    .eq('id', room.id);
-  if (clearPinError?.message?.includes('pinned_message_id')) {
-    throw new Error('Database schema is outdated. Run docs/supabase-migration-v8.sql and retry.');
-  }
-  if (clearPinError) throw clearPinError;
-
-  const { count, error: deleteError } = await supabase
-    .from('messages')
-    .delete({ count: 'exact' })
-    .eq('room_id', room.id);
-  if (deleteError) throw deleteError;
-
-  return { roomId: room.id, code: room.code, wipedMessages: count ?? 0 };
+  const result = data?.[0];
+  if (!result) return { error: 'ROOM_NOT_FOUND' as const };
+  return { roomId: result.room_id, code: result.code, wipedMessages: Number(result.wiped_messages), wipedAt: result.wiped_at };
 };

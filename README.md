@@ -1,5 +1,8 @@
 # NullChannel
 
+For the hardened self-managed VPS setup, use [deployment/DEPLOYMENT.md](deployment/DEPLOYMENT.md). The complete verification report is [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md). Apply migration v11 before starting this backend; historical localStorage UUIDs are not migrated into authenticated ownership.
+
+
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=000)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
@@ -330,14 +333,14 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Behavior          | Detail                                                                   |
 | ----------------- | ------------------------------------------------------------------------ |
-| Room expiry       | Expired rooms are cleaned by a cron job every 15 minutes                 |
+| Room expiry       | Access expires immediately; durable cleanup runs at startup and every minute                 |
 | Termination       | Creator termination deletes the room and cascades related data           |
 | Message edit      | Text messages can be edited by their sender for 2 minutes                |
 | Message delete    | Deleted messages persist as tombstones across refreshes                  |
 | Panic wipe        | Creator wipe clears all room messages and shared media, but keeps the room open |
 | Burn-after-read   | Burn messages are deleted after an active non-sender reads them          |
 | Leave room        | Leave marks membership as left and does not hard-delete history          |
-| Realtime recovery | Users must rejoin the socket room after session state changes            |
+| Realtime recovery | Anonymous sessions renew automatically and authorized rooms rejoin on reconnect            |
 
 ## Observability Checklist
 
@@ -355,7 +358,10 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Encryption     | The app does not provide full end-to-end encryption yet              |
 | Server secrets | Supabase service role and ImageKit private key stay server-side only |
 | Validation     | Request schemas are enforced with Zod                                |
-| Abuse control  | Rate limiting is enabled for room creation, lookup, and uploads      |
+| Abuse control  | Network and authenticated identity limits protect REST and socket operations |
+| Authentication | Server-issued HttpOnly sessions; legacy UUIDs are not authentication |
+| Authorization | Membership protects room history/actions; ownership protects creator and message actions |
+| Attachments | ImageKit URLs remain public; deletion retries use verified provider file IDs |
 
 ## Limitations
 

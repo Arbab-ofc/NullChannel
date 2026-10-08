@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, Trash2, Mic, Square, Pencil, Send, TimerReset, Reply, SmilePlus, MoreVertical, Paperclip, FileText, Download, Pin, PinOff, Images, ExternalLink, Siren, Flame } from 'lucide-react';
 import { Button } from '../components/common/Button';
+import { mergeHistory } from '../lib/messages';
 import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
@@ -12,11 +13,11 @@ import { LoadingSignal } from '../components/common/LoadingSignal';
 type ReactionSummary = { emoji: string; count: number; senders: Array<{ sender_id: string; sender_name: string }> };
 type MessageType = 'text'|'image'|'voice'|'file';
 type ReplyPreview = { id: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_name?: string };
-type Msg = { id?: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_path?: string; file_name?: string; file_size?: number; mime_type?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; burn_after_read?: boolean; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
+type Msg = { id?: string; room_id?: string; sender_id: string; sender_name?: string; content?: string; type: MessageType; file_url?: string; file_path?: string; file_name?: string; file_size?: number; mime_type?: string; reply_to_message_id?: string | null; reply_to?: ReplyPreview | null; reactions?: ReactionSummary[]; burn_after_read?: boolean; created_at?: string; deleted?: boolean; deleted_by?: string; deleted_by_name?: string; edited?: boolean };
 type Room = { id: string; code: string; creator_id: string; room_type: 'private' | 'group'; room_name: string; expires_at: string; expiry_extended?: boolean; pinned_message_id?: string | null };
 type SystemNotice = { id: string; text: string };
 type TypingPayload = { roomCode?: string; senderId?: string; senderName?: string };
-type Participant = { sender_id: string; sender_name: string; joined_at: string };
+type Participant = { sender_id: string; sender_name: string; joined_at: string; online?: boolean };
 type RoomCloseReason = 'expired' | 'terminated-by-creator';
 
 const VOICE_MAX_MS = 2 * 60 * 1000;
@@ -26,7 +27,7 @@ export default function ChatPage() {
   const { code = '' } = useParams();
   const nav = useNavigate();
   const senderId = useLocalSender();
-  const socket = useSocket();
+  const socket = useSocket(code);
   const [room, setRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState('');
@@ -78,8 +79,21 @@ export default function ChatPage() {
   const recordingInterval = useRef<number | null>(null);
   const recordingLimitTimeout = useRef<number | null>(null);
   const burnedReadIds = useRef<Record<string, boolean>>({});
+  const burnTimers = useRef<Record<string, number>>({});
+  const historyEpoch = useRef(0);
+  const dirtyMessageIds = useRef(new Set<string>());
+  const wipedAt = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
+
+  const loadHistory = useCallback(async (roomCode: string) => {
+    const epoch = ++historyEpoch.current;
+    const changed = new Set<string>();
+    dirtyMessageIds.current = changed;
+    const response = await api.get(`/rooms/${roomCode}/messages`);
+    if (historyEpoch.current !== epoch) return;
+    setMessages(current => mergeHistory(response.data.data as Msg[], current, changed, wipedAt.current));
+  }, []);
 
   const loadMyRooms = useCallback(async () => {
     setRoomsLoading(true);
@@ -119,28 +133,38 @@ export default function ChatPage() {
   }, [loadMyRooms, nav]);
 
   useEffect(() => {
+    let cancelled = false;
+    const abort = new AbortController();
+    wipedAt.current = 0;
+    setParticipants([]);
     setPageState('loading');
     setRoom(null);
     (async () => {
-      const roomRes = await api.get(`/rooms/${code.toUpperCase()}`);
+      const roomRes = await api.get(`/rooms/${code.toUpperCase()}`, { signal: abort.signal });
+      if (cancelled) return;
       const roomData = roomRes.data.data as Room;
       setRoom(roomData);
       const cached = sessionStorage.getItem(`nullchannel_name_${roomData.code}`) ?? '';
       setSenderName(cached);
       setNameInput(cached);
-      const msgRes = await api.get(`/rooms/${code.toUpperCase()}/messages`);
-      setMessages(msgRes.data.data);
-      await loadParticipants(roomData.code);
       const rooms = await loadMyRooms();
+      if (cancelled) return;
       const alreadyJoined = roomData.creator_id === senderId || rooms.some((r) => r.code === roomData.code);
       setIsJoined(alreadyJoined);
-      setPageState('ready');
+      setMessages([]);
+      if (alreadyJoined) {
+        await loadHistory(code.toUpperCase());
+        await loadParticipants(roomData.code);
+      }
+      if (!cancelled) setPageState('ready');
     })().catch(() => {
+      if (cancelled) return;
       setRoom(null);
       setPageState('missing');
       setRoomsLoading(false);
     });
-  }, [code, loadMyRooms, loadParticipants, senderId]);
+    return () => { cancelled = true; abort.abort(); historyEpoch.current += 1; };
+  }, [code, loadMyRooms, loadParticipants, loadHistory, senderId]);
 
   useEffect(() => {
     if (!room) return;
@@ -154,11 +178,13 @@ export default function ChatPage() {
   }, [room, showExpiredPopup]);
 
   useEffect(() => () => {
+    Object.values(burnTimers.current).forEach(id => window.clearTimeout(id));
     if (redirectTimeout.current) window.clearTimeout(redirectTimeout.current);
     if (toastTimeout.current) window.clearTimeout(toastTimeout.current);
     if (recordingInterval.current) window.clearInterval(recordingInterval.current);
     if (recordingLimitTimeout.current) window.clearTimeout(recordingLimitTimeout.current);
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    Object.values(typingTimeouts.current).forEach(id => window.clearTimeout(id));
   }, []);
 
   useEffect(() => {
@@ -170,7 +196,8 @@ export default function ChatPage() {
     messages.forEach((message) => {
       if (!message.id || !message.burn_after_read || message.deleted || message.sender_id === senderId || burnedReadIds.current[message.id]) return;
       burnedReadIds.current[message.id] = true;
-      window.setTimeout(() => {
+      burnTimers.current[message.id] = window.setTimeout(() => {
+        delete burnTimers.current[message.id as string];
         api.post(`/rooms/${room.code}/messages/${message.id}/burn-read`, { senderId })
           .then(() => {
             setMessages((current) => current.filter((item) => item.id !== message.id));
@@ -184,7 +211,15 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!room) return;
-    socket.on('room-joined', () => {
+    socket.on('participants-updated', (payload: { roomId: string; online: string[] }) => {
+      if (payload.roomId === room.id) setParticipants(current => current.map(member => ({ ...member, online: payload.online.includes(member.sender_id) })));
+    });
+    socket.on('membership-revoked', (payload: { code: string }) => {
+      if (payload.code === room.code) { setIsJoined(false); setMessages([]); setParticipants([]); }
+    });
+    socket.on('room-joined', (joinedRoom: Room) => {
+      setRoom(current => current?.id === joinedRoom.id && current?.expires_at === joinedRoom.expires_at ? current : joinedRoom);
+      void loadHistory(joinedRoom.code).catch(() => setJoinError('Unable to load message history.'));
       setIsJoined(true);
       setJoinBusy(false);
       setJoinError('');
@@ -209,7 +244,9 @@ export default function ChatPage() {
       if (payload?.message) setJoinError(payload.message);
     });
     socket.on('receive-message', (msg: Msg) => {
-      setMessages((p) => [...p, msg]);
+      if (msg.room_id && msg.room_id !== room.id) return;
+      if (msg.id) dirtyMessageIds.current.add(msg.id);
+      setMessages((p) => p.some(m => m.id === msg.id) ? p : [...p, msg]);
       window.clearTimeout(typingTimeouts.current[msg.sender_id]);
       setTypingUsers((p) => {
         const next = { ...p };
@@ -218,6 +255,7 @@ export default function ChatPage() {
       });
     });
     socket.on('message-deleted', (payload: { messageId?: string; deletedBy?: string; deletedByName?: string }) => {
+      if (payload.messageId) dirtyMessageIds.current.add(payload.messageId);
       if (!payload.messageId) return;
       setMessages((p) => p.map((message) => (message.id === payload.messageId ? {
         ...message,
@@ -234,6 +272,7 @@ export default function ChatPage() {
       });
     });
     socket.on('message-edited', (payload: { messageId?: string; content?: string }) => {
+      if (payload.messageId) dirtyMessageIds.current.add(payload.messageId);
       if (!payload.messageId || typeof payload.content !== 'string') return;
       setMessages((p) => p.map((message) => (message.id === payload.messageId ? {
         ...message,
@@ -242,6 +281,7 @@ export default function ChatPage() {
       } : message)));
     });
     socket.on('message-reactions', (payload: { messageId?: string; reactions?: ReactionSummary[] }) => {
+      if (payload.messageId) dirtyMessageIds.current.add(payload.messageId);
       if (!payload.messageId || !Array.isArray(payload.reactions)) return;
       setMessages((p) => p.map((message) => (message.id === payload.messageId ? {
         ...message,
@@ -249,6 +289,7 @@ export default function ChatPage() {
       } : message)));
     });
     socket.on('message-burned', (payload: { messageId?: string }) => {
+      if (payload.messageId) dirtyMessageIds.current.add(payload.messageId);
       if (!payload.messageId) return;
       setMessages((p) => p.filter((message) => message.id !== payload.messageId));
       setReplyingTo((current) => (current?.id === payload.messageId ? null : current));
@@ -307,9 +348,10 @@ export default function ChatPage() {
       setRoom((current) => (current && current.code === room.code ? { ...current, pinned_message_id: payload.pinnedMessageId ?? null } : current));
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: payload.pinnedMessageId ? 'Message pinned' : 'Pinned message cleared' }]);
     });
-    socket.on('room-wiped', (payload: { code?: string; wipedMessages?: number } = {}) => {
+    socket.on('room-wiped', (payload: { code?: string; wipedMessages?: number; wipedAt?: string } = {}) => {
       if (payload.code !== room.code) return;
-      setMessages([]);
+      if (payload.wipedAt) wipedAt.current = Date.parse(payload.wipedAt);
+      setMessages(current => payload.wipedAt ? current.filter(message => message.created_at && Date.parse(message.created_at) > Date.parse(payload.wipedAt!)) : []);
       setReplyingTo(null);
       setReactionPickerMessageId(null);
       setMessageMenuId(null);
@@ -318,11 +360,16 @@ export default function ChatPage() {
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: count > 0 ? `Panic wipe cleared ${count} messages` : 'Panic wipe cleared the room' }]);
     });
 
-    if ((isJoined || room.creator_id === senderId) && !!senderName) {
-      socket.emit('join-room', { roomCode: room.code, senderId, senderName });
-    }
+    const rejoin = () => {
+      if (isJoined && senderName && room.code === code.toUpperCase()) {
+        socket.emit('join-room', { roomCode: room.code, senderId, senderName });
+      }
+    };
+    socket.on('connect', rejoin);
+    if (socket.connected) rejoin();
 
     return () => {
+      socket.off('connect', rejoin);
       socket.off('receive-message');
       socket.off('room-expired');
       socket.off('socket-error');
@@ -337,10 +384,12 @@ export default function ChatPage() {
       socket.off('message-pinned');
       socket.off('room-wiped');
       socket.off('room-joined');
+      socket.off('membership-revoked');
+      socket.off('participants-updated');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
     };
-  }, [room, socket, senderId, senderName, isJoined, loadMyRooms, loadParticipants, showExpiredPopup, nav]);
+  }, [code, room, socket, senderId, senderName, isJoined, loadMyRooms, loadParticipants, loadHistory, showExpiredPopup, nav]);
 
   const joinCurrentRoom = (nameOverride?: string) => {
     if (!room) return;
@@ -404,11 +453,13 @@ export default function ChatPage() {
         senderName: senderName || undefined,
         type: 'image',
         fileUrl: res.data.data.fileUrl,
-        filePath: res.data.data.fileId ?? res.data.data.filePath,
+        filePath: res.data.data.filePath,
         replyToMessageId: replyingTo?.id,
         burnAfterRead: burnAfterReadMode
       });
       setReplyingTo(null);
+    } catch {
+      showToast('Image upload failed. Please retry.');
     } finally {
       setUploadingImage(false);
     }
@@ -440,7 +491,7 @@ export default function ChatPage() {
         type: 'file',
         content: file.name,
         fileUrl: res.data.data.fileUrl,
-        filePath: res.data.data.fileId ?? res.data.data.filePath,
+        filePath: res.data.data.filePath,
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type || 'application/octet-stream',
@@ -476,7 +527,7 @@ export default function ChatPage() {
         senderName,
         type: 'voice',
         fileUrl: res.data.data.fileUrl,
-        filePath: res.data.data.fileId ?? res.data.data.filePath,
+        filePath: res.data.data.filePath,
         replyToMessageId: replyingTo?.id,
         burnAfterRead: burnAfterReadMode
       });
@@ -743,7 +794,9 @@ export default function ChatPage() {
     setWipeBusy(true);
     try {
       const res = await api.post(`/rooms/${room.code}/wipe`, { senderId });
-      setMessages([]);
+      const cutoff = Date.parse(res.data.data.wipedAt);
+      wipedAt.current = cutoff;
+      setMessages(current => current.filter(message => message.created_at && Date.parse(message.created_at) > cutoff));
       setReplyingTo(null);
       setReactionPickerMessageId(null);
       setMessageMenuId(null);
@@ -1262,7 +1315,7 @@ export default function ChatPage() {
       <div className="mb-5 border-b-2 border-accent/40 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Radio className="h-4 w-4" />PARTICIPANTS</p>
-          <span className="border border-cyan px-2 py-1 text-[10px] uppercase tracking-wider text-muted">{participants.length} Active</span>
+          <span className="border border-cyan px-2 py-1 text-[10px] uppercase tracking-wider text-muted">{participants.filter(member => member.online).length} Online</span>
         </div>
         <div className="mt-3 grid gap-2">
           {participantsLoading && <RoomLoadingRows />}

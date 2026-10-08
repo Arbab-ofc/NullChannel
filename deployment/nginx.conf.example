@@ -1,0 +1,66 @@
+# NEW site file under sites-available, included in nginx's http context.
+# Replace nullchannel.example.com, 127.0.0.1:5050 and root before enabling.
+# Certbot adds HTTPS to THIS hostname after DNS/HTTP validation.
+map $http_upgrade $nullchannel_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name nullchannel.example.com;
+    root /srv/nullchannel/client/dist;
+    index index.html;
+    client_max_body_size 16m; # 15 MiB file plus multipart headers
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    # Adapt the ImageKit host if IMAGEKIT_URL_ENDPOINT uses a custom delivery domain.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://ik.imagekit.io; media-src 'self' blob: https://ik.imagekit.io; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+    add_header Permissions-Policy "camera=(), geolocation=(), microphone=(self)" always;
+    location /api/ {
+        proxy_pass http://127.0.0.1:5050;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_request_buffering on;
+        add_header Cache-Control no-store always;
+    }
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:5050;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $nullchannel_connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+    }
+    location /assets/ {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options nosniff always;
+    }
+    location = /index.html {
+        add_header Cache-Control no-cache;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+    # Adapt the ImageKit host if IMAGEKIT_URL_ENDPOINT uses a custom delivery domain.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://ik.imagekit.io; media-src 'self' blob: https://ik.imagekit.io; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+    add_header Permissions-Policy "camera=(), geolocation=(), microphone=(self)" always;
+
+    }
+    location / { try_files $uri $uri/ /index.html; }
+    error_page 413 = @upload_too_large;
+    location @upload_too_large {
+        default_type application/json;
+        return 413 '{"success":false,"data":null,"error":{"code":"UPLOAD_TOO_LARGE","message":"Upload exceeds proxy limit."}}';
+    }
+}

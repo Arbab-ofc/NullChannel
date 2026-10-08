@@ -1,3 +1,4 @@
+import { queueUnusedUpload } from './media.service.js';
 import { supabase } from '../config/supabase.js';
 import type { MessagePayload } from '../types/index.js';
 
@@ -286,7 +287,10 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
     error = fallback.error;
   }
 
-  if (error) throw error;
+  if (error) {
+    await queueUnusedUpload(roomId, payload.senderId, payload.filePath);
+    throw error;
+  }
   return hydrateSingleMessage(data as MessageRow);
 };
 

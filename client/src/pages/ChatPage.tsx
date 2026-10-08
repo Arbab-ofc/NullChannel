@@ -4,6 +4,9 @@ import { Copy, Link2, Radio, DoorOpen, Power, Rows2, ImagePlus, Menu, X, House, 
 import { Button } from '../components/common/Button';
 import { mergeHistory } from '../lib/messages';
 import { api } from '../lib/api';
+import { useVoiceCall } from '../hooks/useVoiceCall';
+import { VoiceCallButton, VoiceCallUI } from '../components/call/VoiceCallUI';
+import { callIsActive } from '../lib/voice-call';
 import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
 import { useCountdown } from '../hooks/useCountdown';
@@ -85,6 +88,10 @@ export default function ChatPage() {
   const wipedAt = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const left = useCountdown(room?.expires_at ?? new Date().toISOString());
+
+  const { call: voiceCall, view: voiceView } = useVoiceCall(socket,code.toUpperCase(),!!room && room.room_type === 'private' && isJoined && !expiredNotice,room?.expires_at);
+
+  useEffect(() => { if (voiceView.phase === 'incoming') { setExtendModalOpen(false); setMenuOpen(false); } },[voiceView.phase]);
 
   const loadHistory = useCallback(async (roomCode: string) => {
     const epoch = ++historyEpoch.current;
@@ -214,9 +221,10 @@ export default function ChatPage() {
     socket.on('participants-updated', (payload: { roomId: string; online: string[] }) => {
       if (payload.roomId === room.id) setParticipants(current => current.map(member => ({ ...member, online: payload.online.includes(member.sender_id) })));
     });
-    socket.on('membership-revoked', (payload: { code: string }) => {
+    const onMembershipRevoked = (payload: { code: string }) => {
       if (payload.code === room.code) { setIsJoined(false); setMessages([]); setParticipants([]); }
-    });
+    };
+    socket.on('membership-revoked',onMembershipRevoked);
     socket.on('room-joined', (joinedRoom: Room) => {
       setRoom(current => current?.id === joinedRoom.id && current?.expires_at === joinedRoom.expires_at ? current : joinedRoom);
       void loadHistory(joinedRoom.code).catch(() => setJoinError('Unable to load message history.'));
@@ -329,12 +337,13 @@ export default function ChatPage() {
         });
       }, 1800);
     });
-    socket.on('room-expired', (payload: { reason?: RoomCloseReason } = {}) => {
+    const onRoomExpired = (payload: { reason?: RoomCloseReason } = {}) => {
       setIsJoined(false);
       setTypingUsers({});
       loadMyRooms().catch(() => undefined);
       showExpiredPopup(payload.reason === 'terminated-by-creator' ? 'terminated-by-creator' : 'expired');
-    });
+    };
+    socket.on('room-expired',onRoomExpired);
     socket.on('room-extended', (payload: { code?: string; expiresAt?: string; extendByMinutes?: number } = {}) => {
       if (payload.code !== room.code || !payload.expiresAt) return;
       const expiresAt = payload.expiresAt;
@@ -371,7 +380,7 @@ export default function ChatPage() {
     return () => {
       socket.off('connect', rejoin);
       socket.off('receive-message');
-      socket.off('room-expired');
+      socket.off('room-expired',onRoomExpired);
       socket.off('socket-error');
       socket.off('user-left');
       socket.off('user-joined');
@@ -384,7 +393,7 @@ export default function ChatPage() {
       socket.off('message-pinned');
       socket.off('room-wiped');
       socket.off('room-joined');
-      socket.off('membership-revoked');
+      socket.off('membership-revoked',onMembershipRevoked);
       socket.off('participants-updated');
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
@@ -547,7 +556,7 @@ export default function ChatPage() {
   };
 
   const startVoiceRecording = async () => {
-    if (!room || !isJoined || !senderName || recordingVoice || uploadingVoice) return;
+    if (!room || !isJoined || !senderName || recordingVoice || uploadingVoice || callIsActive(voiceView.phase)) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       showToast('Voice recording unsupported');
       return;
@@ -923,9 +932,12 @@ export default function ChatPage() {
             </div>
             <p className="code-font mt-1 truncate text-xs tracking-widest sm:text-sm">CHANNEL ID: {room.code}</p>
           </div>
-          <div className="shrink-0 text-right">
+          <div className="flex shrink-0 items-center gap-2">
+            {room.room_type === 'private' && <VoiceCallButton view={voiceView} available={participants.some(member => member.sender_id !== senderId && member.online === true)} disabled={!isJoined || recordingVoice || uploadingVoice || !socket.connected} start={() => void voiceCall.invite()} />}
+            <div className="text-right">
             <p className="code-font text-xs tracking-[0.2em] text-muted">EXPIRES IN</p>
             <p className="text-lg font-bold text-punch">{left}</p>
+            </div>
           </div>
         </div>
         <div className="mt-4 hidden flex-wrap gap-2 xl:flex">
@@ -1002,6 +1014,7 @@ export default function ChatPage() {
           </aside>
         </>
       </header>
+      <VoiceCallUI view={voiceView} call={voiceCall} microphoneBusy={recordingVoice || uploadingVoice} />
 
       {pinnedMessage && (
         <section className="pinned-message neo-panel">
@@ -1297,7 +1310,8 @@ export default function ChatPage() {
           <button
             className={`composer-action-button composer-action-button--voice ${recordingVoice ? 'is-recording' : ''}`}
             onClick={recordingVoice ? stopVoiceRecording : startVoiceRecording}
-            disabled={!isJoined || uploadingVoice}
+            aria-label={callIsActive(voiceView.phase) ? 'Voice recording unavailable during a call' : 'Record voice message'}
+            disabled={!isJoined || uploadingVoice || callIsActive(voiceView.phase)}
           >
             {recordingVoice ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             <span className="composer-label">{recordingVoice ? '[STOP]' : uploadingVoice ? '[VOICE...]' : '[MIC]'}</span>

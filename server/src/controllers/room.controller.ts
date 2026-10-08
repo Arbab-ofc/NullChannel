@@ -1,11 +1,11 @@
 import type { Request, Response } from 'express';
 import { createRoom, extendRoomExpiry, getRoomByCode, pinRoomMessage, terminateRoom, wipeRoomMessages } from '../services/room.service.js';
-import { deleteMessageById, getMessageById, hardDeleteMessageById, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
+import { deleteMessageById, getMessageById, markMessageSeen, listMessages, toggleMessageReaction, updateMessageContent } from '../services/message.service.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { createRoomSchema, extendRoomSchema, pinMessageSchema, senderParamSchema, terminateRoomSchema } from '../schemas/room.schema.js';
 import { burnReadSchema, deleteMessageSchema, editMessageSchema, reactionSchema } from '../schemas/message.schema.js';
 import { getActiveRoomsForSender, getParticipantsForRoom, isActiveMember, leaveMembership } from '../services/membership.service.js';
-import { onlineIdentities, revokeRoomSockets, emitMessageBurned, emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended, emitRoomWiped } from '../sockets/emitter.js';
+import { onlineIdentities, revokeRoomSockets, emitMessageDeleted, emitMessageEdited, emitMessagePinned, emitMessageReactions, emitRoomExpired, emitRoomExpiredByCode, emitRoomExtended, emitRoomWiped } from '../sockets/emitter.js';
 
 export const createRoomController = async (req: Request, res: Response) => {
   const parsed = createRoomSchema.safeParse(req.body);
@@ -174,9 +174,8 @@ export const burnReadMessageController = async (req: Request, res: Response) => 
     res.status(403).json(errorResponse('JOIN_REQUIRED', 'Join this channel before reading burn-after-read messages.'));
     return;
   }
-  await hardDeleteMessageById(message.id);
-  emitMessageBurned(room.id, { messageId: message.id });
-  res.json(successResponse({ burned: true, messageId: message.id }));
+  const deadline = await markMessageSeen(room.id, message.id, res.locals.identity);
+  res.json(successResponse(deadline));
 };
 
 export const pinMessageController = async (req: Request, res: Response) => {

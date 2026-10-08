@@ -1,6 +1,6 @@
 # NullChannel
 
-For the hardened self-managed VPS setup, use [deployment/DEPLOYMENT.md](deployment/DEPLOYMENT.md). The complete verification report is [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md). Apply migration v11 before starting this backend; historical localStorage UUIDs are not migrated into authenticated ownership.
+For the hardened self-managed VPS setup, use [deployment/DEPLOYMENT.md](deployment/DEPLOYMENT.md). The complete verification report is [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md). Apply migrations through v12 before starting this backend; historical localStorage UUIDs are not migrated into authenticated ownership.
 
 
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=000)](https://react.dev/)
@@ -109,7 +109,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `POST`   | `/api/rooms/:code/wipe`                | Delete all room messages/media and keep the room open |
 | `PATCH`  | `/api/rooms/:code/messages/:messageId` | Edit your own text message within 2 minutes |
 | `POST`   | `/api/rooms/:code/messages/:messageId/reactions` | Toggle an emoji reaction on a message |
-| `POST`   | `/api/rooms/:code/messages/:messageId/burn-read` | Consume and remove a burn-after-read message |
+| `POST`   | `/api/rooms/:code/messages/:messageId/burn-read` | Record first recipient seen; destroy 60 seconds later |
 | `DELETE` | `/api/rooms/:code/messages/:messageId` | Delete a message                            |
 | `GET`    | `/api/rooms/:code/participants`        | List active participants                    |
 | `POST`   | `/api/rooms/:code/leave`               | Leave a room                                |
@@ -187,6 +187,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `v9` | Persist deleted-message tombstones across refreshes |
 | `v10` | Add burn-after-read messages |
 | `v11` | Secure anonymous sessions, atomic membership/room RPCs, media registry and durable cleanup |
+| `v12` | Persistent, authorized 60-second post-seen burn deadlines and bounded cleanup |
 
 ## Prerequisites
 
@@ -259,7 +260,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
    cp server/.env.example server/.env
    ```
 4. Fill the server env values for Supabase and ImageKit.
-5. Apply the Supabase migrations in `docs/` in order, through `docs/supabase-migration-v11.sql`, using a disposable database for tests. Existing production databases must not be migrated without separate authorization.
+5. Apply the Supabase migrations in `docs/` in order, through `docs/supabase-migration-v12.sql`, using a disposable database for tests. Existing production databases must not be migrated without separate authorization.
 6. Run the app:
    ```bash
    npm run dev
@@ -393,3 +394,7 @@ The examples below require a same-origin proxy or compatible same-site arrangeme
 Native, audio-only one-to-one WebRTC calls use the existing authenticated Socket.IO connection. No recording, audio storage or media relay is added. See [setup, signaling, security, network limits and test instructions](docs/VOICE_CALLING.md). STUN-only calls can fail on restrictive networks; TURN is not included. This feature remains isolated on `feat/webrtc-voice-calling` and is not deployed.
 
 For credential-free local calls using ordinary Chrome windows and real microphone/audio, run `npm run voice:manual`. See [manual testing steps and isolation guarantees](docs/VOICE_CALLING_MANUAL.md).
+
+## UX polish and post-seen burn
+
+See [docs/UX_POLISH.md](docs/UX_POLISH.md) for scroll behavior, recipient viewing semantics, migration v12, verification evidence and the coordinated VPS release/rollback procedure. This branch has not been pushed or deployed.

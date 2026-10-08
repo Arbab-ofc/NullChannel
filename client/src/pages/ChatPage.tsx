@@ -9,7 +9,10 @@ import { VoiceCallButton, VoiceCallUI } from '../components/call/VoiceCallUI';
 import { callIsActive } from '../lib/voice-call';
 import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
-import { useCountdown } from '../hooks/useCountdown';
+import { useTranscriptScroll } from '../hooks/useTranscriptScroll';
+import { useSeenMessages } from '../hooks/useSeenMessages';
+import { ExpiryCountdown } from '../components/chat/ExpiryCountdown';
+import { CommandCenter } from '../components/chat/CommandCenter';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { LoadingSignal } from '../components/common/LoadingSignal';
 
@@ -81,13 +84,21 @@ export default function ChatPage() {
   const recordingStartedAt = useRef(0);
   const recordingInterval = useRef<number | null>(null);
   const recordingLimitTimeout = useRef<number | null>(null);
-  const burnedReadIds = useRef<Record<string, boolean>>({});
-  const burnTimers = useRef<Record<string, number>>({});
+  const removedMessageIds = useRef(new Set<string>());
   const historyEpoch = useRef(0);
   const dirtyMessageIds = useRef(new Set<string>());
   const wipedAt = useRef(0);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const left = useCountdown(room?.expires_at ?? new Date().toISOString());
+  const transcript = useTranscriptScroll(messages,notices,code);
+  const receiveMessage = transcript.receive;
+  useSeenMessages(transcript.element,code.toUpperCase(),senderId,messages,isJoined);
+  const [connected,setConnected] = useState(socket.connected);
+  const closeMenu = useCallback(() => setMenuOpen(false),[]);
+  useEffect(() => {
+    const online = () => setConnected(true);
+    const offline = () => { setConnected(false); setTypingUsers({}); Object.values(typingTimeouts.current).forEach(window.clearTimeout); typingTimeouts.current = {}; };
+    socket.on('connect',online); socket.on('disconnect',offline);
+    return () => { socket.off('connect',online); socket.off('disconnect',offline); };
+  },[socket]);
 
   const { call: voiceCall, view: voiceView } = useVoiceCall(socket,code.toUpperCase(),!!room && room.room_type === 'private' && isJoined && !expiredNotice,room?.expires_at);
 
@@ -142,8 +153,9 @@ export default function ChatPage() {
   useEffect(() => {
     let cancelled = false;
     const abort = new AbortController();
-    wipedAt.current = 0;
+    wipedAt.current = 0; removedMessageIds.current.clear();
     setParticipants([]);
+    setTypingUsers({});
     setPageState('loading');
     setRoom(null);
     (async () => {
@@ -185,7 +197,6 @@ export default function ChatPage() {
   }, [room, showExpiredPopup]);
 
   useEffect(() => () => {
-    Object.values(burnTimers.current).forEach(id => window.clearTimeout(id));
     if (redirectTimeout.current) window.clearTimeout(redirectTimeout.current);
     if (toastTimeout.current) window.clearTimeout(toastTimeout.current);
     if (recordingInterval.current) window.clearInterval(recordingInterval.current);
@@ -195,34 +206,12 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [messages, notices, typingUsers]);
-
-  useEffect(() => {
-    if (!room || !isJoined) return;
-    messages.forEach((message) => {
-      if (!message.id || !message.burn_after_read || message.deleted || message.sender_id === senderId || burnedReadIds.current[message.id]) return;
-      burnedReadIds.current[message.id] = true;
-      burnTimers.current[message.id] = window.setTimeout(() => {
-        delete burnTimers.current[message.id as string];
-        api.post(`/rooms/${room.code}/messages/${message.id}/burn-read`, { senderId })
-          .then(() => {
-            setMessages((current) => current.filter((item) => item.id !== message.id));
-          })
-          .catch(() => {
-            delete burnedReadIds.current[message.id as string];
-          });
-      }, 1400);
-    });
-  }, [messages, room, isJoined, senderId]);
-
-  useEffect(() => {
     if (!room) return;
     socket.on('participants-updated', (payload: { roomId: string; online: string[] }) => {
       if (payload.roomId === room.id) setParticipants(current => current.map(member => ({ ...member, online: payload.online.includes(member.sender_id) })));
     });
     const onMembershipRevoked = (payload: { code: string }) => {
-      if (payload.code === room.code) { setIsJoined(false); setMessages([]); setParticipants([]); }
+      if (payload.code === room.code) { setIsJoined(false); setMessages([]); setParticipants([]); setTypingUsers({}); }
     };
     socket.on('membership-revoked',onMembershipRevoked);
     socket.on('room-joined', (joinedRoom: Room) => {
@@ -252,7 +241,9 @@ export default function ChatPage() {
       if (payload?.message) setJoinError(payload.message);
     });
     socket.on('receive-message', (msg: Msg) => {
-      if (msg.room_id && msg.room_id !== room.id) return;
+      if ((msg.room_id && msg.room_id !== room.id) || (msg.id && removedMessageIds.current.has(msg.id))) return;
+      if (wipedAt.current && msg.created_at && Date.parse(msg.created_at) <= wipedAt.current) return;
+      if (msg.id) receiveMessage(msg.id,msg.sender_id === senderId);
       if (msg.id) dirtyMessageIds.current.add(msg.id);
       setMessages((p) => p.some(m => m.id === msg.id) ? p : [...p, msg]);
       window.clearTimeout(typingTimeouts.current[msg.sender_id]);
@@ -299,13 +290,19 @@ export default function ChatPage() {
     socket.on('message-burned', (payload: { messageId?: string }) => {
       if (payload.messageId) dirtyMessageIds.current.add(payload.messageId);
       if (!payload.messageId) return;
-      setMessages((p) => p.filter((message) => message.id !== payload.messageId));
+      removedMessageIds.current.add(payload.messageId);
+      setMessages((p) => p.filter((message) => message.id !== payload.messageId).map(message => message.reply_to_message_id === payload.messageId ? { ...message,reply_to: null } : message));
       setReplyingTo((current) => (current?.id === payload.messageId ? null : current));
       setReactionPickerMessageId((current) => (current === payload.messageId ? null : current));
       setMessageMenuId((current) => (current === payload.messageId ? null : current));
     });
     socket.on('user-left', (payload: { senderId?: string; senderName?: string }) => {
       if (payload?.senderId === senderId) return;
+      if (payload.senderId) {
+        window.clearTimeout(typingTimeouts.current[payload.senderId]);
+        delete typingTimeouts.current[payload.senderId];
+        setTypingUsers(current => { const next = { ...current }; delete next[payload.senderId!]; return next; });
+      }
       const name = payload?.senderName ?? 'A user';
       setNotices((p) => [...p, { id: `${Date.now()}-${Math.random()}`, text: `${name} left the room` }]);
       setParticipants((p) => p.filter((participant) => participant.sender_id !== payload?.senderId));
@@ -327,7 +324,7 @@ export default function ChatPage() {
     socket.on('user-typing', (payload: TypingPayload) => {
       if (!payload.senderId || payload.senderId === senderId || payload.roomCode !== room.code) return;
       const name = payload.senderName ?? `User-${payload.senderId.slice(0, 6)}`;
-      setTypingUsers((p) => ({ ...p, [payload.senderId as string]: name }));
+      setTypingUsers((p) => p[payload.senderId as string] === name ? p : ({ ...p, [payload.senderId as string]: name }));
       window.clearTimeout(typingTimeouts.current[payload.senderId]);
       typingTimeouts.current[payload.senderId] = window.setTimeout(() => {
         setTypingUsers((p) => {
@@ -398,7 +395,7 @@ export default function ChatPage() {
       Object.values(typingTimeouts.current).forEach((id) => window.clearTimeout(id));
       typingTimeouts.current = {};
     };
-  }, [code, room, socket, senderId, senderName, isJoined, loadMyRooms, loadParticipants, loadHistory, showExpiredPopup, nav]);
+  }, [code, room, socket, senderId, senderName, isJoined, loadMyRooms, loadParticipants, loadHistory, showExpiredPopup, nav, receiveMessage]);
 
   const joinCurrentRoom = (nameOverride?: string) => {
     if (!room) return;
@@ -863,7 +860,7 @@ export default function ChatPage() {
     </div>
   </main>;
 
-  return <main className="mx-auto grid h-[100svh] w-full max-w-7xl gap-2 overflow-hidden bg-bg px-2 py-2 sm:gap-3 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-4 lg:px-8 lg:py-6">
+  return <main className="mx-auto grid h-[100dvh] w-full max-w-7xl gap-2 overflow-hidden bg-bg px-2 py-2 sm:gap-3 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-4 lg:px-8 lg:py-6">
     {!senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
@@ -919,26 +916,21 @@ export default function ChatPage() {
       </div>
     )}
     <section className="order-1 flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden sm:gap-3 lg:order-1 lg:gap-4">
-      <header className="neo-panel shrink-0 p-2 sm:p-4 lg:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+      <header className="chat-header neo-panel shrink-0 p-2 sm:p-4 lg:p-5">
+        <div className="chat-header__summary">
+          <div className="chat-header__identity min-w-0">
             <p className="code-font hidden text-xs tracking-[0.2em] text-cyan sm:block">NULLCHANNEL / SESSION ACTIVE</p>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-5">
-              <p className="min-w-0 truncate text-sm font-semibold uppercase">{room.room_name}</p>
-              <span className={`connection-status connection-status--inline hidden xl:inline-flex ${isJoined ? '' : 'connection-status--idle'}`}>
-                {isJoined && <Radio className="connection-status__icon" />}
-                {isJoined ? 'Connected' : 'Not Joined'}
-              </span>
-            </div>
-            <p className="code-font mt-1 truncate text-xs tracking-widest sm:text-sm">CHANNEL ID: {room.code}</p>
+            <p className="mt-1 truncate text-sm font-semibold uppercase" title={room.room_name}>{room.room_name}</p>
+            <p className="code-font mt-1 text-[10px] tracking-widest sm:text-sm">CHANNEL ID: {room.code}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {room.room_type === 'private' && <VoiceCallButton view={voiceView} available={participants.some(member => member.sender_id !== senderId && member.online === true)} disabled={!isJoined || recordingVoice || uploadingVoice || !socket.connected} start={() => void voiceCall.invite()} />}
-            <div className="text-right">
-            <p className="code-font text-xs tracking-[0.2em] text-muted">EXPIRES IN</p>
-            <p className="text-lg font-bold text-punch">{left}</p>
-            </div>
+          <div className="chat-header__actions">
+            {room.room_type === 'private' && <VoiceCallButton view={voiceView} available={participants.some(member => member.sender_id !== senderId && member.online === true)} disabled={!isJoined || recordingVoice || uploadingVoice || !connected} start={() => void voiceCall.invite()} />}
+            <ExpiryCountdown expiresAt={room.expires_at} />
+            <button type="button" className="chat-menu-toggle neo-action xl:hidden" onClick={() => setMenuOpen(v => !v)} aria-label="Toggle chat menu" aria-expanded={menuOpen} aria-controls="chat-command-center"><Menu className="h-5 w-5" /></button>
           </div>
+          <span role="status" className={`connection-status ${isJoined && connected ? '' : 'connection-status--idle'}`}>
+            {isJoined && connected && <Radio className="connection-status__icon" />}{!isJoined ? 'Not Joined' : connected ? 'Connected' : socket.active ? 'Reconnecting…' : 'Disconnected'}
+          </span>
         </div>
         <div className="mt-4 hidden flex-wrap gap-2 xl:flex">
           {room.creator_id !== senderId && (
@@ -954,7 +946,7 @@ export default function ChatPage() {
           {room.creator_id === senderId && (
             <Button
               className="border-cyan text-cyan"
-              onClick={() => setExtendModalOpen(true)}
+              onClick={() => { closeMenu(); setExtendModalOpen(true); }}
               disabled={!!room.expiry_extended || !!extendBusy}
               title={room.expiry_extended ? 'This channel has already been extended' : 'Extend expiry'}
             >
@@ -965,29 +957,9 @@ export default function ChatPage() {
           {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
           {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
         </div>
-        <div className="mt-2 flex items-center justify-between gap-2 sm:mt-4 xl:hidden">
-          {isJoined ? <span className="connection-status"><Radio className="connection-status__icon" />Connected</span> : <span className="connection-status connection-status--idle">Not Joined</span>}
-          <button
-            className="neo-action inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-accent bg-panel"
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Toggle chat menu"
-          >
-            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-        <>
-          <button
-            className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-250 xl:hidden ${menuOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
-            onClick={() => setMenuOpen(false)}
-            aria-label="Close menu"
-          />
-          <aside className={`fixed right-0 top-0 z-50 h-full w-[88%] max-w-sm border-l-2 border-accent bg-panel p-4 shadow-panel transition-transform duration-300 ease-out xl:hidden ${menuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-            <div className="mb-4 flex items-center justify-between">
-              <p className="code-font text-xs tracking-[0.2em] text-cyan">CHANNEL CONTROLS</p>
-              <button className="neo-action inline-flex h-10 w-10 items-center justify-center border-2 border-accent bg-panel" onClick={() => setMenuOpen(false)}><X className="h-5 w-5" /></button>
-            </div>
-            <div className="grid gap-2">
-              <ThemeToggle />
+        <CommandCenter immediate={extendModalOpen || voiceView.phase === 'incoming'} open={menuOpen} close={closeMenu} code={room.code}>
+          <section className="command-group"><h3>Appearance</h3><div><ThemeToggle /></div></section>
+          <section className="command-group"><h3>Channel</h3><div>
               {room.creator_id !== senderId && (
                 <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : () => joinCurrentRoom()} disabled={(joinBusy && !isJoined) || leaveBusy}>
                   <DoorOpen className="mr-2 inline h-4 w-4" />
@@ -996,11 +968,10 @@ export default function ChatPage() {
               )}
               <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
               <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
-              <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
               {room.creator_id === senderId && (
                 <Button
                   className="border-cyan text-cyan"
-                  onClick={() => setExtendModalOpen(true)}
+                  onClick={() => { closeMenu(); setExtendModalOpen(true); }}
                   disabled={!!room.expiry_extended || !!extendBusy}
                   title={room.expiry_extended ? 'This channel has already been extended' : 'Extend expiry'}
                 >
@@ -1008,11 +979,13 @@ export default function ChatPage() {
                   {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend Expiry'}
                 </Button>
               )}
+            </div></section>
+          <section className="command-group"><h3>Navigation</h3><div><Button onClick={() => { closeMenu(); nav('/'); }}><House className="mr-2 inline h-4 w-4" />Home</Button></div></section>
+          <section className="command-group command-group--danger"><h3>Danger Zone</h3><div>
               {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
               {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
-            </div>
-          </aside>
-        </>
+            </div></section>
+        </CommandCenter>
       </header>
       <VoiceCallUI view={voiceView} call={voiceCall} microphoneBusy={recordingVoice || uploadingVoice} />
 
@@ -1033,7 +1006,8 @@ export default function ChatPage() {
         </section>
       )}
 
-      <section className="chat-transcript neo-panel min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5">
+      <section ref={transcript.ref} aria-label="Messages" className="chat-transcript neo-panel min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5">
+        <div className="transcript-content space-y-3">
         {!isJoined && room.creator_id !== senderId && (
           <div className="border-2 border-punch bg-panel px-3 py-2 text-xs uppercase tracking-wider text-muted">
             Press Join Room to enter this channel.
@@ -1050,7 +1024,7 @@ export default function ChatPage() {
           </div>
         ))}
         {messages.length === 0 && <div className="border-2 border-dashed border-accent/60 p-5 text-sm text-muted">No transmissions yet. Send the first message.</div>}
-        {messages.map((m, i) => <article key={m.id ?? i} className={`group relative max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.deleted ? 'mx-auto border-punch/70 bg-panel text-muted' : m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
+        {messages.map((m, i) => <article data-message-id={m.id} key={m.id ?? i} className={`group relative max-w-[94%] border-2 p-2.5 text-sm shadow-panel sm:max-w-[82%] lg:max-w-[70%] ${m.deleted ? 'mx-auto border-punch/70 bg-panel text-muted' : m.sender_id === senderId ? 'ml-auto border-cyan bg-cyan/10' : 'border-accent bg-accent/10'}`}>
           <div className="message-row-head mb-1">
             <p className="message-sender-label text-[10px] uppercase tracking-wider text-muted">{m.deleted ? 'Message removed' : m.sender_id === senderId ? 'You' : (m.sender_name ?? 'Member')}</p>
             {!m.deleted && m.id && (
@@ -1128,7 +1102,7 @@ export default function ChatPage() {
           {!m.deleted && m.burn_after_read && (
             <div className="burn-badge mb-2">
               <Flame className="h-3.5 w-3.5" />
-              <span>{m.sender_id === senderId ? 'Burns after another member reads it' : 'Burn-after-read message'}</span>
+              <span>{m.sender_id === senderId ? 'Destroys 60s after another member sees it' : 'Destroys 60s after viewing'}</span>
             </div>
           )}
           {m.deleted && <p className="code-font text-xs uppercase tracking-[0.16em]">{deletedText(m)}</p>}
@@ -1193,13 +1167,14 @@ export default function ChatPage() {
             </div>
           )}
         </article>)}
-        {typingNames.length > 0 && (
-          <div className="typing-indicator mx-auto max-w-full">
-            <LoadingSignal label={typingLabel} />
-          </div>
-        )}
-        <div ref={messagesEndRef} className="h-1" />
+        </div>
       </section>
+
+      <div className="chat-activity" aria-label="Chat activity">
+        <div className={`typing-region ${typingNames.length ? 'is-visible' : ''}`} aria-live="polite">{typingNames.length > 0 && <LoadingSignal label={typingLabel} />}</div>
+        <Button className={`new-message-indicator ${transcript.unread > 0 ? 'is-visible' : ''}`} aria-hidden={transcript.unread === 0} disabled={transcript.unread === 0} tabIndex={transcript.unread > 0 ? 0 : -1} aria-label={`Scroll to ${transcript.unread} new ${transcript.unread === 1 ? 'message' : 'messages'}`} onClick={transcript.newest}>↓ {transcript.unread === 1 ? 'New message' : `${transcript.unread} new messages`}</Button>
+        <span className="sr-only" role="status">{transcript.unread ? `${transcript.unread} new messages` : ''}</span>
+      </div>
 
     {isJoined && reactionTarget && !reactionTarget.deleted && (
       <div className="reaction-dock">
@@ -1271,7 +1246,7 @@ export default function ChatPage() {
             onClick={() => setBurnAfterReadMode((value) => !value)}
             disabled={!isJoined || recordingVoice}
             type="button"
-            title={burnAfterReadMode ? 'Burn-after-read on' : 'Burn-after-read off'}
+            title={burnAfterReadMode ? 'Destroy 60 seconds after seen' : 'Burn mode off'}
             aria-pressed={burnAfterReadMode}
           >
             <Flame className="h-4 w-4" />

@@ -18,7 +18,8 @@ export const reactionSchema = z.strictObject({
 });
 
 export const burnReadSchema = z.strictObject({
-  senderId
+  senderId,
+  viewProtocol: z.literal('focused-viewport-v1')
 });
 
 export const socketMessageSchema = z.strictObject({

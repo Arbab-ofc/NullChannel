@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase.js';
-import { emitRoomExpired, emitRoomExpiredByCode } from '../sockets/emitter.js';
+import { emitMessageBurned, emitRoomExpired, emitRoomExpiredByCode } from '../sockets/emitter.js';
 import { deleteMediaByFileId, recoverUploadIntents } from './media.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -45,4 +45,15 @@ export const cleanupExpiredRooms = async () => {
     logger.info('cleanup_complete', { removedRooms });
     return { removedRooms };
   } finally { running = false; }
+};
+
+let burning = false;
+export const cleanupBurnMessages = async () => {
+  if (burning) return;
+  burning = true;
+  try {
+    const { data, error } = await supabase.rpc('cleanup_burn_messages');
+    if (error) throw error;
+    for (const message of data ?? []) emitMessageBurned(message.room_id, { messageId: message.id });
+  } finally { burning = false; }
 };

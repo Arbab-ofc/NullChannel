@@ -198,12 +198,50 @@ it.skipIf(process.env.RUN_WEBRTC_BROWSER !== '1')('two real Chromium contexts ne
     const [a,b] = pages;
     await vi.waitFor(() => expect([...io.sockets.sockets.values()].filter(socket => socket.rooms.has(state.room.id))).toHaveLength(2),{ timeout: 10000 });
     await a.getByRole('button',{ name: 'Start voice call',exact: true }).waitFor();
+    // Exercise the actual transcript hook with real socket delivery before calling.
+    const baseMessages = Array.from({ length: 50 },(_,index) => ({ id: randomUUID(),room_id: state.room.id,sender_id: state.identities[0],sender_name: 'Alice',type: 'text',content: `History ${index} `+'long message '.repeat(20),created_at: new Date(Date.now()+index).toISOString() }));
+    for (const message of baseMessages) io.to(state.room.id).emit('receive-message',message);
+    await b.getByText('History 49',{ exact: false }).waitFor();
+    const transcript = b.getByRole('region',{ name: 'Messages' });
+    await transcript.evaluate(element => { element.scrollTop = 150; element.dispatchEvent(new Event('scroll')); });
+    const before = await transcript.evaluate(element => element.scrollTop);
+    const headerBefore = await b.locator('.chat-header').boundingBox();
+    const viewportBefore = await transcript.boundingBox();
+    for (let index=0; index<3; index++) io.to(state.room.id).emit('receive-message',{ id: randomUUID(),room_id: state.room.id,sender_id: state.identities[0],sender_name: 'Alice',type: 'text',content: `Incoming ${index}`,created_at: new Date().toISOString() });
+    await b.getByRole('button',{ name: 'Scroll to 3 new messages' }).waitFor();
+    expect(await transcript.evaluate(element => element.scrollTop)).toBe(before);
+    for (let index=0; index<12; index++) io.to(state.room.id).emit('user-typing',{ roomCode: state.room.code,senderId: state.identities[0],senderName: 'Alice' });
+    await b.getByText('Alice is typing',{ exact: true }).waitFor();
+    expect(await transcript.boundingBox()).toEqual(viewportBefore); expect(await b.locator('.chat-header').boundingBox()).toEqual(headerBefore);
+    expect(await transcript.evaluate(element => element.scrollTop)).toBe(before);
+    await b.getByRole('button',{ name: 'Scroll to 3 new messages' }).click();
+    expect(await transcript.evaluate(element => element.scrollHeight-element.clientHeight-element.scrollTop)).toBeLessThanOrEqual(2);
+    expect(await b.locator('.new-message-indicator').isDisabled()).toBe(true);
+    // Check both themes and all requested widths, including the 1280px breakpoint.
+    for (const theme of ['dark','light']) {
+      await b.evaluate(theme => document.documentElement.classList.toggle('light',theme === 'light'),theme);
+      for (const width of [320,375,390,430,768,1024,1280,1440]) {
+        await b.setViewportSize({ width,height: 900 });
+        expect(await b.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        expect(await b.locator('.connection-status:visible').count()).toBe(1);
+        expect(await b.locator('.chat-expiry').isVisible()).toBe(true);
+        const phone = await b.getByRole('button',{ name: 'Start voice call',exact: true }).boundingBox();
+        expect(phone!.width).toBeGreaterThanOrEqual(44); expect(phone!.height).toBeGreaterThanOrEqual(44);
+        if (width < 1280) {
+          await b.getByRole('button',{ name: 'Toggle chat menu' }).click(); await b.getByRole('dialog',{ name: 'SESSION CONTROLS' }).waitFor();
+          await b.keyboard.press('Tab'); expect(await b.evaluate(() => document.activeElement?.closest('dialog') !== null)).toBe(true);
+          if (width === 320) await b.mouse.click(2,450); else await b.keyboard.press('Escape'); await b.waitForTimeout(320);
+          expect(await b.getByRole('button',{ name: 'Toggle chat menu' }).evaluate(element => element === document.activeElement)).toBe(true);
+        }
+      }
+    }
+    await b.setViewportSize({ width: 390,height: 844 });
     await a.getByRole('button',{ name: 'Start voice call',exact: true }).click();
     await b.getByRole('dialog').waitFor();
     for (const width of [320,375,390,430,768,1024,1440]) {
       await b.setViewportSize({ width,height: 900 });
       expect(await b.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      expect(await b.locator('dialog').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      expect(await b.getByRole('dialog',{ name: 'Incoming Voice Call' }).evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
       for (const label of ['Accept','Decline']) {
         const bounds = await b.getByRole('button',{ name: label,exact: true }).boundingBox();
         expect(bounds).not.toBeNull(); expect(bounds!.height).toBeGreaterThanOrEqual(44);
@@ -212,7 +250,7 @@ it.skipIf(process.env.RUN_WEBRTC_BROWSER !== '1')('two real Chromium contexts ne
     }
     await b.setViewportSize({ width: 390,height: 844 });
     await b.screenshot({ path: '../output/playwright/voice-incoming-mobile.png' });
-    expect(await b.locator('dialog').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await b.getByRole('dialog',{ name: 'Incoming Voice Call' }).evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await b.keyboard.press('Tab');
     expect(await b.evaluate(() => document.activeElement?.closest('dialog') !== null)).toBe(true);
     expect(await b.evaluate(() => (window as unknown as { __callStreams: MediaStream[] }).__callStreams.length)).toBe(0);
@@ -257,7 +295,21 @@ it.skipIf(process.env.RUN_WEBRTC_BROWSER !== '1')('two real Chromium contexts ne
     state.room.room_type = 'group'; await a.reload();
     await a.getByText('CHANNEL ID: TEST1234',{ exact: true }).waitFor();
     expect(await a.getByRole('button',{ name: 'Start voice call',exact: true }).count()).toBe(0);
+    expect(await a.locator('.site-footer').count()).toBe(0);
+    for (const socket of io.sockets.sockets.values()) if (socket.data.identity === state.identities[0]) socket.disconnect(true);
+    await a.locator('.connection-status').filter({ hasText: 'Disconnected' }).waitFor();
+    await b.goto(origin+'/');
+    await b.getByText('Designed and developed by',{ exact: false }).waitFor();
+    for (const theme of ['dark','light']) {
+      await b.evaluate(theme => document.documentElement.classList.toggle('light',theme === 'light'),theme);
+      for (const width of [320,375,390,430,768,1024,1280,1440]) {
+        await b.setViewportSize({ width,height: 900 });
+        expect(await b.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        expect(await b.locator('.site-footer').count()).toBe(1);
+      }
+    }
+    await b.locator('.site-footer').screenshot({ path: '../output/playwright/footer-light.png' });
   } finally {
     await browser?.close(); await vite.close(); [env.CALL_RING_TIMEOUT_MS,env.CALL_CONNECT_TIMEOUT_MS,env.CALL_SIGNAL_LIMIT] = original;
   }
-},60000);
+},90000);

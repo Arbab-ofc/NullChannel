@@ -20,6 +20,8 @@ type MessageRow = {
   deleted_by_name?: string | null;
   deleted_at?: string | null;
   burn_after_read?: boolean | null;
+  first_seen_at?: string | null;
+  burn_expires_at?: string | null;
   created_at: string;
 };
 
@@ -30,7 +32,7 @@ type ReactionRow = {
   emoji: string;
 };
 
-const messageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, deleted, deleted_by, deleted_by_name, deleted_at, burn_after_read, created_at';
+const messageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, deleted, deleted_by, deleted_by_name, deleted_at, burn_after_read, first_seen_at, burn_expires_at, created_at';
 const v9MessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, deleted, deleted_by, deleted_by_name, deleted_at, created_at';
 const v8MessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, file_name, file_size, mime_type, reply_to_message_id, created_at';
 const v7MessageSelect = 'id, room_id, sender_id, sender_name, type, content, file_url, file_path, reply_to_message_id, created_at';
@@ -38,6 +40,8 @@ const legacyMessageSelect = 'id, room_id, sender_id, sender_name, type, content,
 
 const withDeleteDefaults = <T extends Record<string, unknown>>(message: T) => ({
   ...message,
+  first_seen_at: null,
+  burn_expires_at: null,
   deleted: false,
   deleted_by: null,
   deleted_by_name: null,
@@ -46,7 +50,9 @@ const withDeleteDefaults = <T extends Record<string, unknown>>(message: T) => ({
 
 const withBurnDefault = <T extends Record<string, unknown>>(message: T) => ({
   ...message,
-  burn_after_read: false
+  burn_after_read: false,
+  first_seen_at: null,
+  burn_expires_at: null
 });
 
 const summarizeReactions = (rows: ReactionRow[]) => {
@@ -73,7 +79,7 @@ const hydrateMessages = async (messages: MessageRow[]) => {
     replyIds.length > 0
       ? supabase
         .from('messages')
-        .select('id, sender_id, sender_name, type, content, file_url')
+        .select('id, sender_id, sender_name, type, content, file_url, burn_expires_at')
         .in('id', replyIds)
       : Promise.resolve({ data: [], error: null })
   ]);
@@ -88,7 +94,7 @@ const hydrateMessages = async (messages: MessageRow[]) => {
     reactionsByMessage.set(reaction.message_id, list);
   });
 
-  const repliesById = new Map((replyRows ?? []).map((reply) => [reply.id, reply]));
+  const repliesById = new Map((replyRows ?? []).filter(messageAvailable).map((reply) => [reply.id, reply]));
 
   return messages.map((message) => ({
     ...message,
@@ -162,10 +168,10 @@ export const listMessages = async (roomId: string) => {
   }
   if (error) throw error;
   try {
-    return await hydrateMessages((data ?? []) as MessageRow[]);
+    return (await hydrateMessages(((data ?? []) as MessageRow[]).filter(messageAvailable))).filter(messageAvailable);
   } catch (hydrateError) {
     if (hydrateError instanceof Error && hydrateError.message.includes('message_reactions')) {
-      return (data ?? []).map((message) => ({ ...message, reactions: [], reply_to: null }));
+      return (data ?? []).filter(messageAvailable).map((message) => ({ ...message, reactions: [], reply_to: null }));
     }
     throw hydrateError;
   }
@@ -297,7 +303,7 @@ export const saveMessage = async (roomId: string, payload: MessagePayload) => {
 export const getMessageById = async (messageId: string) => {
   let { data, error } = await supabase
     .from('messages')
-    .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id, file_name, file_size, mime_type, deleted, deleted_by, deleted_by_name, deleted_at, burn_after_read')
+    .select('id, room_id, sender_id, sender_name, type, file_path, created_at, reply_to_message_id, file_name, file_size, mime_type, deleted, deleted_by, deleted_by_name, deleted_at, burn_after_read, first_seen_at, burn_expires_at')
     .eq('id', messageId)
     .maybeSingle();
   if (error?.message?.includes('burn_after_read')) {
@@ -346,7 +352,7 @@ export const getMessageById = async (messageId: string) => {
     error = fallback.error;
   }
   if (error) throw error;
-  return data;
+  return data && messageAvailable(data) ? data : null;
 };
 
 export const deleteMessageById = async (messageId: string, deletedBy: string, deletedByName: string) => {
@@ -459,4 +465,13 @@ export const toggleMessageReaction = async (messageId: string, senderId: string,
 export const hardDeleteMessageById = async (messageId: string) => {
   const { error } = await supabase.from('messages').delete().eq('id', messageId);
   if (error) throw error;
+};
+
+export const messageAvailable = (message: { burn_expires_at?: string | null }) =>
+  !message.burn_expires_at || Date.parse(message.burn_expires_at) > Date.now();
+export const markMessageSeen = async (roomId: string, messageId: string, identity: string) => {
+  const { data, error } = await supabase.rpc('mark_message_seen', { p_room: roomId, p_message: messageId, p_sender: identity });
+  if (error) throw error;
+  if (!data?.[0]) throw new Error('Read receipt unavailable');
+  return data[0];
 };

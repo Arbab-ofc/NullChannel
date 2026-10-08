@@ -19,7 +19,7 @@ export const useSeenMessages = (container: HTMLElement | null, code: string, ide
           pending.delete(id);
           if (!visible.has(node) || document.visibilityState !== 'visible' || !document.hasFocus()) return;
           sent.add(id);
-          void api.post(`/rooms/${code}/messages/${id}/burn-read`,{}).catch(() => {
+          void api.post(`/rooms/${code}/messages/${id}/burn-read`,{ viewProtocol: 'focused-viewport-v1' }).catch(() => {
             sent.delete(id);
             if (!disposed && visible.has(node)) pending.set(id,setTimeout(() => { pending.delete(id); schedule(); },3000));
           });

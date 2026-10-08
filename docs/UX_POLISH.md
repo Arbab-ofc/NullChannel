@@ -14,7 +14,7 @@ A shared semantic footer on public pages includes NULLCHANNEL, the requested sup
 
 The old frontend reported burn-read 1.4 seconds after delivery/history retrieval; the server deleted immediately. Delivery no longer means seen. A non-sender burn message must be at least half of its visible viewport-sized area in view for one continuous second while the document is foreground and focused. Leaving view, hiding the tab or losing focus cancels the viewing interval. This is an explicit UI viewing definition, not proof a person read the text. A member can intentionally acknowledge viewing; no server can prove human attention.
 
-The existing authenticated, Origin-protected, rate-limited REST receipt derives identity from the verified cookie. Membership and room/message association are checked in the controller and again transactionally in `mark_message_seen`. PostgreSQL locks the room then message, verifies the live session and recipient, and records `first_seen_at = clock_timestamp()` and `burn_expires_at = first_seen_at + 60 seconds` only once. The browser supplies no timing or ownership value. In group rooms the first valid non-sender recipient starts the shared deadline. Repeated receipts, multiple tabs, reconnection, editing and client clock changes do not extend it. Unseen burn messages survive until viewed, explicit deletion/wipe or room expiry.
+The existing authenticated, Origin-protected, rate-limited REST receipt derives identity from the verified cookie. It requires `viewProtocol: "focused-viewport-v1"`; old delivery-based clients receive 409 `CLIENT_UPGRADE_REQUIRED` without starting a deadline and must reload. This marker identifies the supported client protocol, not proof of human attention. Membership and room/message association are checked in the controller and again transactionally in `mark_message_seen`. PostgreSQL locks the room, session, membership and message, verifies the live access session and recipient, and records `first_seen_at = clock_timestamp()` and `burn_expires_at = first_seen_at + 60 seconds` only once. The browser supplies no timing or ownership value. In group rooms the first valid non-sender recipient starts the shared deadline. Repeated receipts, multiple tabs, reconnection, editing and client clock changes do not extend it. Unseen burn messages survive until viewed, explicit deletion/wipe or room expiry.
 
 A non-overlapping worker runs at startup and every second. Its RPC locks bounded batches with SKIP LOCKED, physically deletes due messages and triggers the existing durable ImageKit cleanup queue before deletion. It emits existing `message-burned` events after commit. Clients remove those IDs and quoted previews and reject delayed delivery of removed IDs. Normal deadline-to-message-deletion latency is approximately 0–1 second plus database/worker latency. This is not a hard real-time physical deletion guarantee: outages/backlog delay deletion. History, individual lookups and quoted replies filter overdue deadlines so reconnects do not expose them while cleanup is delayed. A currently disconnected client can retain already downloaded content until it reconnects; this feature cannot erase participant copies.
 
@@ -22,7 +22,7 @@ Room expiration and panic wipe retain independent immediate access revocation/de
 
 ## Migration
 
-Apply `docs/supabase-migration-v12.sql` after v11 and before starting this backend. It adds nullable UTC timestamps, a strict paired/exact-60-second constraint, a partial due index and two service-role-only RPCs. Existing rows retain null deadlines; existing ownership is unchanged. A clean database requires the base schema plus v2–v12 in order. No production database was accessed. Disposable PostgreSQL tests exercised the complete migration chain, concurrent receipts, authorization, persistent timestamps across connections, due deletion, queueing and repeated cleanup.
+Apply `docs/supabase-migration-v12.sql` after v11 and before starting this backend. It adds nullable UTC timestamps, a strict paired/exact-60-second constraint, a partial due index and two service-role-only RPCs. Existing rows retain null deadlines; existing ownership is unchanged. Migration lock waits are bounded to 5 seconds and individual statements to 60 seconds; a timeout aborts and rolls back. A commit-only PostgREST schema-cache notification announces the new fields/RPCs; verify actual provider API readiness during release. Enabled canonical v11 media/insert triggers are required, and unsafe inherited RPC execution grants fail closed. A clean database requires the base schema plus v2–v12 in order. No production database was accessed. Disposable PostgreSQL tests exercised the complete migration chain, concurrent receipts, authorization, persistent timestamps across connections, due deletion, queueing and repeated cleanup.
 
 ## Verification
 
@@ -51,7 +51,7 @@ Only deploy after separate approval and staged acceptance. These commands are in
    ```
 
    `APPROVED_RELEASE_COMMIT` is an operator input, not a known deployment commit. The feature has not been pushed. Standard tests intentionally skip optional local database/browser cases unless configured.
-3. Schedule a brief coordinated NullChannel release window. Stop **only** `nullchannel` before migration so the old backend cannot keep immediately consuming burn messages during transition. Leave Nginx, cloudflared and other services running. Load a protected PostgreSQL DSN through your existing secure operator environment and apply v12:
+3. Schedule a brief coordinated NullChannel release window. Stop **only** `nullchannel` before migration so the old backend cannot keep immediately consuming burn messages during transition. Leave Nginx, cloudflared and other services running. Do not run old and new NullChannel backend versions concurrently. Load a protected PostgreSQL DSN through your existing secure operator environment and apply v12:
 
    ```sh
    sudo systemctl stop nullchannel
@@ -59,7 +59,7 @@ Only deploy after separate approval and staged acceptance. These commands are in
    ```
 
 4. Install the approved backend and built `client/dist` into the service/static paths currently configured for `/srv/nullchannel`, retaining the protected environment and ownership. Follow your existing backup/release-swap procedure; do not overwrite unrelated files or `.env`. This repository cannot assume your Nginx root or systemd release layout. If using a service-user-owned Git checkout instead, ensure its working tree is clean, fetch and check out the explicit approved release commit, install/build there during the window and preserve rollback artifacts.
-5. Start and verify only NullChannel:
+5. Start and verify only NullChannel. Serve the matching new frontend and require existing browser tabs to reload before using Burn Mode (old clients are rejected safely). Keep the normal index cache policy so new loads receive the new hashed assets:
 
    ```sh
    sudo systemctl start nullchannel
@@ -100,3 +100,5 @@ Only deploy after separate approval and staged acceptance. These commands are in
 | `README.md` | Updated migration requirement and burn-read semantics. |
 | `deployment/DEPLOYMENT.md` | Correct migration chain and cleanup cadence. |
 | `docs/UX_POLISH.md` | Root causes, protocol, evidence, limitations and coordinated deployment/rollback instructions. |
+
+See [MIGRATION_V12_AUDIT.md](MIGRATION_V12_AUDIT.md) for the follow-up production migration audit, expanded tests, rollout compatibility limits and GO criteria.

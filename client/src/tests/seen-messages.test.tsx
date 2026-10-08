@@ -25,7 +25,7 @@ it('does not count delivery or hidden/offscreen content as seen',async () => {
 });
 it('sends a receipt only after a focused visible interval and does not reset on incoming messages',async () => {
   visibility(true); await act(async () => vi.advanceTimersByTimeAsync(500)); await act(async () => root.render(<Fixture extra />));
-  await act(async () => vi.advanceTimersByTimeAsync(500)); expect(post).toHaveBeenCalledWith('/rooms/TEST1234/messages/message/burn-read',{});
+  await act(async () => vi.advanceTimersByTimeAsync(500)); expect(post).toHaveBeenCalledWith('/rooms/TEST1234/messages/message/burn-read',{ viewProtocol: 'focused-viewport-v1' });
   visibility(true); await act(async () => vi.advanceTimersByTimeAsync(2000)); expect(post).toHaveBeenCalledOnce();
 });
 it('cancels the viewing interval when a message leaves view',async () => {

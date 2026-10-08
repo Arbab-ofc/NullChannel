@@ -7,7 +7,7 @@ const { state, from, rpc } = vi.hoisted(() => {
   Object.assign(process.env, { NODE_ENV: 'test', CLIENT_URL: 'http://localhost:5173', SUPABASE_URL: 'https://test.invalid', SUPABASE_SERVICE_ROLE_KEY: 'test-only', IMAGEKIT_PUBLIC_KEY: 'test-public', IMAGEKIT_PRIVATE_KEY: 'test-private', IMAGEKIT_URL_ENDPOINT: 'https://test.invalid', SOCKET_JOIN_LIMIT: '2', SOCKET_MESSAGE_LIMIT: '2' });
   const identity = '11111111-1111-4111-8111-111111111111';
   const owner = '22222222-2222-4222-8222-222222222222';
-  const state = { valid: true, member: true, dbFailure: false, identity, room: { id: '33333333-3333-4333-8333-333333333333', code: 'TEST1234', creator_id: owner, room_type: 'group', room_name: 'Test room', expires_at: new Date(Date.now()+3600000).toISOString() }, message: { id: '44444444-4444-4444-8444-444444444444', room_id: '33333333-3333-4333-8333-333333333333', sender_id: owner, sender_name: 'Owner', type: 'text', created_at: new Date().toISOString(), deleted: false } };
+  const state = { valid: true, member: true, dbFailure: false, identity, room: { id: '33333333-3333-4333-8333-333333333333', code: 'TEST1234', creator_id: owner, room_type: 'group', room_name: 'Test room', expires_at: new Date(Date.now()+3600000).toISOString() }, message: { id: '44444444-4444-4444-8444-444444444444', room_id: '33333333-3333-4333-8333-333333333333', sender_id: owner, sender_name: 'Owner', type: 'text', created_at: new Date().toISOString(), deleted: false, burn_after_read: false } };
   const from = vi.fn((table: string) => {
     const result = (single: boolean) => {
       if (state.dbFailure) return { data: null, error: new Error('private database details'), count: null };
@@ -38,7 +38,7 @@ import { onlineIdentities } from '../sockets/emitter.js';
 import { createSocketServer } from '../sockets/index.js';
 const cookie = `nc_access=${'a'.repeat(64)}`;
 const origin = 'http://localhost:5173';
-beforeEach(() => { state.identity = randomUUID(); state.valid = true; state.member = true; state.dbFailure = false; vi.clearAllMocks(); });
+beforeEach(() => { state.identity = randomUUID(); state.valid = true; state.member = true; state.dbFailure = false; state.message.burn_after_read = false; state.message.sender_id = state.room.creator_id; vi.clearAllMocks(); });
 describe('real Express routes with isolated database boundary', () => {
   it('issues HttpOnly cookies without adopting a legacy UUID and supports revocation', async () => {
     const response = await request(app).post('/api/session').set('Origin',origin).send({ senderId: state.room.creator_id });
@@ -74,6 +74,31 @@ describe('real Express routes with isolated database boundary', () => {
     const response = await request(app).post('/api/rooms').set('Cookie',cookie).set('Origin',origin).send({ senderId: state.room.creator_id, senderName: 'Guest', roomName: 'Room', roomType: 'private', expiresInMinutes: 15 });
     expect(response.status).toBe(201);
     expect(rpc).toHaveBeenCalledWith('create_room', expect.objectContaining({ p_sender: state.identity }));
+  });
+  it('rejects legacy delivery receipts without starting a burn deadline',async () => {
+    state.message.burn_after_read = true;
+    const response = await request(app).post(`/api/rooms/TEST1234/messages/${state.message.id}/burn-read`).set('Cookie',cookie).set('Origin',origin).send({ senderId: state.room.creator_id });
+    expect(response.status).toBe(409); expect(response.body.error.code).toBe('CLIENT_UPGRADE_REQUIRED'); expect(rpc).not.toHaveBeenCalled();
+  });
+  it('binds viewport receipts to authenticated identity and rejects client timestamps',async () => {
+    state.message.burn_after_read = true;
+    const deadline = { first_seen_at: new Date().toISOString(),burn_expires_at: new Date(Date.now()+60000).toISOString() };
+    rpc.mockResolvedValueOnce({ data: [deadline] as never[],error: null });
+    const path = `/api/rooms/TEST1234/messages/${state.message.id}/burn-read`;
+    const response = await request(app).post(path).set('Cookie',cookie).set('Origin',origin).send({ senderId: state.room.creator_id,viewProtocol: 'focused-viewport-v1' });
+    expect(response.status).toBe(200); expect(response.body.data).toEqual(deadline);
+    expect(rpc).toHaveBeenCalledWith('mark_message_seen',{ p_room: state.room.id,p_message: state.message.id,p_sender: state.identity });
+    const malformed = await request(app).post(path).set('Cookie',cookie).set('Origin',origin).send({ viewProtocol: 'focused-viewport-v1',first_seen_at: '2100-01-01' });
+    expect(malformed.status).toBe(400);
+  });
+  it('rejects burn receipts from nonmembers, senders, expired credentials and wrong origins',async () => {
+    state.message.burn_after_read = true; const path = `/api/rooms/TEST1234/messages/${state.message.id}/burn-read`;
+    const receipt = () => request(app).post(path).set('Cookie',cookie).set('Origin',origin).send({ viewProtocol: 'focused-viewport-v1' });
+    state.member = false; expect((await receipt()).status).toBe(403); state.member = true;
+    state.message.sender_id = state.identity; expect((await receipt()).status).toBe(403);
+    state.valid = false; expect((await receipt()).status).toBe(401);
+    expect((await request(app).post(path).set('Cookie',cookie).set('Origin','https://untrusted.invalid').send({ viewProtocol: 'focused-viewport-v1' })).status).toBe(403);
+    expect(rpc).not.toHaveBeenCalled();
   });
   it('denies CSRF writes and hides database error details', async () => {
     expect((await request(app).post('/api/rooms').set('Cookie',cookie).send({})).status).toBe(403);
@@ -118,6 +143,11 @@ describe('real Socket.IO transport with isolated database boundary', () => {
     expect(await onlineIdentities(state.room.id)).toEqual([state.identity]);
     expect(from.mock.calls.filter(call => call[0] === 'room_members').length).toBeGreaterThan(0);
     second.disconnect();
+  });
+  it('rejects invented Socket.IO burn receipts instead of bypassing the REST authorization path',async () => {
+    const s=client(); const connected=waitFor(s,'connect'); s.connect(); await connected;
+    const rejected=waitFor(s,'socket-error'); s.emit('burn-read',{ roomCode: 'TEST1234',messageId: state.message.id,senderId: state.room.creator_id });
+    expect(await rejected).toMatchObject({ code: 'RATE_LIMITED' }); expect(rpc).not.toHaveBeenCalled(); s.disconnect();
   });
   it('authenticates identity, atomically authorizes joining, validates and rate-limits events', async () => {
     const s = client(); const connected = waitFor(s,'connect'); s.connect(); await connected;

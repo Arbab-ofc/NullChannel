@@ -144,6 +144,11 @@ export const reactToMessageController = async (req: Request, res: Response) => {
 };
 
 export const burnReadMessageController = async (req: Request, res: Response) => {
+  // Pre-v12 clients automatically acknowledged delivery, not actual foreground viewing.
+  if (req.body?.viewProtocol !== 'focused-viewport-v1') {
+    res.status(409).json(errorResponse('CLIENT_UPGRADE_REQUIRED', 'Reload this page before acknowledging burn messages.'));
+    return;
+  }
   const parsed = burnReadSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json(errorResponse('VALIDATION_ERROR', 'senderId is required.'));

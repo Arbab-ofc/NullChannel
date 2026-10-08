@@ -143,6 +143,14 @@ describe('authenticated real Socket.IO call signaling',() => {
     const ended = wait(a,'call:ended'); const recovery = await Promise.all([ack(a,'call:reconnecting',{ callId: id }),ack(b,'call:reconnecting',{ callId: id })]);
     expect(recovery.every(result => result.ok)).toBe(true); expect(await ended).toMatchObject({ reason: 'network-failed' }); expect(registry.calls.size).toBe(0);
   });
+  it('fails closed on room lookup errors and releases an existing call without leaking database details',async () => {
+    const [a,b] = await pair(); roomLookup.mockRejectedValueOnce(new Error('private database password'));
+    expect(await ack(a,'call:invite',{ roomCode: 'TEST1234' })).toMatchObject({ ok: false,code: 'CALL_UNAVAILABLE' });
+    expect(registry.calls.size).toBe(0);
+    const id = await invite(a,b); roomLookup.mockRejectedValueOnce(new Error('private database password'));
+    expect(await ack(b,'call:accept',{ callId: id })).toEqual({ ok: false,code: 'CALL_UNAVAILABLE',message: 'Calling is temporarily unavailable.' });
+    expect(registry.calls.size).toBe(0);
+  });
   it('bounds SDP and ICE payloads without retaining raw audio',() => {
     expect(audioSdp.safeParse('x'.repeat(50000)).success).toBe(false);
     expect(callIceSchema.safeParse({ callId: randomUUID(),revision: 1,candidate: { candidate: 'candidate:'+ 'x'.repeat(2048),sdpMid: '0',sdpMLineIndex: 0 } }).success).toBe(false);
@@ -192,6 +200,17 @@ it.skipIf(process.env.RUN_WEBRTC_BROWSER !== '1')('two real Chromium contexts ne
     await a.getByRole('button',{ name: 'Start voice call',exact: true }).waitFor();
     await a.getByRole('button',{ name: 'Start voice call',exact: true }).click();
     await b.getByRole('dialog').waitFor();
+    for (const width of [320,375,390,430,768,1024,1440]) {
+      await b.setViewportSize({ width,height: 900 });
+      expect(await b.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      expect(await b.locator('dialog').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      for (const label of ['Accept','Decline']) {
+        const bounds = await b.getByRole('button',{ name: label,exact: true }).boundingBox();
+        expect(bounds).not.toBeNull(); expect(bounds!.height).toBeGreaterThanOrEqual(44);
+        expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width);
+      }
+    }
+    await b.setViewportSize({ width: 390,height: 844 });
     await b.screenshot({ path: '../output/playwright/voice-incoming-mobile.png' });
     expect(await b.locator('dialog').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await b.keyboard.press('Tab');
@@ -211,6 +230,18 @@ it.skipIf(process.env.RUN_WEBRTC_BROWSER !== '1')('two real Chromium contexts ne
     expect(await a.evaluate(() => (window as unknown as { __callStreams: MediaStream[] }).__callStreams[0].getAudioTracks()[0].enabled)).toBe(false);
     await a.getByRole('button',{ name: 'Unmute microphone',exact: true }).click();
     expect(await a.evaluate(() => (window as unknown as { __callStreams: MediaStream[] }).__callStreams[0].getAudioTracks()[0].enabled)).toBe(true);
+    for (const width of [320,375,390,430,768,1024,1440]) {
+      await b.setViewportSize({ width,height: 900 });
+      expect(await b.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      for (const label of ['Mute microphone','End voice call']) {
+        const bounds = await b.getByRole('button',{ name: label,exact: true }).boundingBox();
+        expect(bounds).not.toBeNull(); expect(bounds!.height).toBeGreaterThanOrEqual(44);
+        expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width);
+      }
+      await b.getByRole('button',{ name: 'End voice call',exact: true }).focus();
+      expect(await b.getByRole('button',{ name: 'End voice call',exact: true }).evaluate(element => element === document.activeElement)).toBe(true);
+    }
+    await b.setViewportSize({ width: 390,height: 844 });
     await a.screenshot({ path: '../output/playwright/voice-desktop.png' }); await b.screenshot({ path: '../output/playwright/voice-mobile.png' });
     expect(await b.locator('main').evaluate(element => getComputedStyle(element).display)).toBe('grid');
     const overflow = await b.evaluate(() => document.documentElement.scrollWidth > window.innerWidth); expect(overflow).toBe(false);

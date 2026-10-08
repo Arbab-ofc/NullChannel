@@ -91,8 +91,14 @@ export class VoiceCall {
   async invite() {
     this.reset(); if (this.view.phase !== 'idle' || this.disposed) return;
     this.caller = true; this.transition('outgoing');
-    try { const result = await this.request('call:invite',{ roomCode: this.roomCode }); if (this.disposed && result.callId) void this.request('call:end',{ callId: result.callId }).catch(() => undefined); }
-    catch (error) { if (this.snapshot().phase === 'outgoing') this.fail(microphoneError(error)); }
+    const generation = this.generation;
+    try {
+      const result = await this.request('call:invite',{ roomCode: this.roomCode });
+      if (result.callId && (this.disposed || this.generation !== generation)) {
+        // Cancellation can precede both the outgoing event and its acknowledgment.
+        void this.request('call:end',{ callId: result.callId }).catch(() => undefined);
+      }
+    } catch (error) { if (this.generation === generation && this.snapshot().phase === 'outgoing') this.fail(microphoneError(error)); }
   }
   async accept() {
     if (this.view.phase !== 'incoming' || this.view.accepting) return;

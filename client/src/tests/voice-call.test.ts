@@ -79,6 +79,16 @@ describe('browser audio engine',() => {
     Peer.last.connectionState = 'disconnected'; Peer.last.onconnectionstatechange!(); await Promise.resolve(); await Promise.resolve();
     expect(cb.state).toHaveBeenCalledWith('reconnecting'); await vi.advanceTimersByTimeAsync(11); expect(cb.error).toHaveBeenCalled();
   });
+  it('allows recovery after a transient connection restores without new SDP',async () => {
+    const cb = callbacks(); const peer = new AudioPeer(true,cb); await peer.offer();
+    const pc = Peer.last;
+    pc.connectionState = 'disconnected'; pc.onconnectionstatechange!();
+    await vi.waitFor(() => expect(cb.description).toHaveBeenCalledTimes(2));
+    pc.connectionState = 'connected'; pc.onconnectionstatechange!();
+    pc.connectionState = 'disconnected'; pc.onconnectionstatechange!();
+    await vi.waitFor(() => expect(cb.description).toHaveBeenCalledTimes(3));
+    expect(cb.state.mock.calls.filter(([state]) => state === 'reconnecting')).toHaveLength(2); peer.close();
+  });
   it.each(['NotAllowedError','NotFoundError','NotReadableError','OverconstrainedError','SecurityError'])('explains microphone %s',name => { const error = new Error('details'); error.name = name; expect(microphoneError(error)).not.toBe('details'); });
   it('accepts public STUN URLs but rejects embedded TURN credentials',() => {
     expect(iceConfiguration('stun:stun.l.google.com:19302').iceServers).toHaveLength(1);
@@ -114,6 +124,24 @@ describe('frontend call state and signaling lifecycle',() => {
   it('dismisses missed calls and ignores unrelated signaling',() => {
     const s = signaling(); const call = new VoiceCall(s.socket,'TEST1234'); call.attach(); s.emit('call:incoming',{ callId: 'id',roomCode: 'OTHER123' }); expect(call.snapshot().phase).toBe('idle');
     s.emit('call:incoming',{ callId: 'id',roomCode: 'TEST1234' }); s.emit('call:timeout',{ callId: 'id',reason: 'no-answer' }); expect(call.snapshot().message).toBe('Missed Call'); call.dismiss(); expect(call.snapshot().phase).toBe('idle'); call.dispose();
+  });
+  it('ends an invitation acknowledged after cancellation without disturbing a newer call',async () => {
+    const s = signaling(); const call = new VoiceCall(s.socket,'TEST1234'); call.attach();
+    let acknowledge!: (error: null,result: object) => void;
+    s.send.mockImplementationOnce((_event,_data,callback) => { acknowledge = callback; });
+    const pending = call.invite(); call.end(); call.dismiss();
+    await call.invite(); s.emit('call:outgoing',{ callId: 'new-id',roomCode: 'TEST1234' });
+    acknowledge(null,{ ok: true,callId: 'old-id' }); await pending;
+    expect(s.send).toHaveBeenCalledWith('call:end',{ callId: 'old-id' },expect.any(Function));
+    expect(call.snapshot()).toMatchObject({ phase: 'outgoing',callId: 'new-id' }); call.dispose();
+  });
+  it('ignores a late invitation failure after cancellation and another invitation',async () => {
+    const s = signaling(); const call = new VoiceCall(s.socket,'TEST1234'); call.attach();
+    let acknowledge!: (error: null,result: object) => void;
+    s.send.mockImplementationOnce((_event,_data,callback) => { acknowledge = callback; });
+    const pending = call.invite(); call.end(); call.dismiss(); await call.invite();
+    acknowledge(null,{ ok: false,message: 'Old invitation failed' }); await pending;
+    expect(call.snapshot().phase).toBe('outgoing'); call.dispose();
   });
   it('prevents impossible state transitions',() => { expect(callTransitions.idle).not.toContain('connected'); expect(callTransitions.ended).toEqual(['idle']); });
 });

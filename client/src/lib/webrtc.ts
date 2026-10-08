@@ -87,6 +87,7 @@ export class AudioPeer {
     if (this.closed || !this.pc) return;
     const state = this.pc.connectionState;
     if (state === 'connected') {
+      this.recovering = false;
       if (this.timer) clearTimeout(this.timer); this.timer = null;
       this.callbacks.state('connected');
     } else if (state === 'disconnected') this.reconnecting();

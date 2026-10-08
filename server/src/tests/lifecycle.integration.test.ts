@@ -38,7 +38,8 @@ describe('real backend startup and shutdown with disposable configuration', () =
       server.child.kill(signal); expect(await server.exit).toBe(0);
       expect(server.logs()).toContain('shutdown_complete'); expect(server.logs()).not.toContain('test-only-private-key');
     } finally { if (server.child.exitCode === null) server.child.kill('SIGKILL'); }
-  },10000);
+  // Production grants shutdown 25 seconds; allow scheduling overhead in the full browser suite.
+  },30000);
   it('reports invalid startup configuration without leaking supplied credentials', async () => {
     const server = start('invalid'); expect(await server.exit).toBe(1);
     expect(server.logs()).toContain('invalid_environment'); expect(server.logs()).not.toContain('test-only-service-key');

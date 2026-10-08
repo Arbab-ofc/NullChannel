@@ -127,9 +127,9 @@ The existing database suite can be enabled separately or alongside the browser t
 TEST_DATABASE_URL=postgresql://LOCAL_TEST_USER@127.0.0.1:LOCAL_TEST_PORT/nullchannel_test RUN_WEBRTC_BROWSER=1 npm test
 ```
 
-Replace LOCAL_TEST_USER/PORT with a deliberately created disposable local PostgreSQL instance. The suite validates local host/test database names. Never supply a production DSN. The feature adds no schema migration.
+Replace LOCAL_TEST_USER/PORT with a deliberately created disposable local PostgreSQL instance and use a fresh test database for each full run. The suite leaves fixtures behind; reusing a database can fill the bounded cleanup batch with jobs from earlier runs. The suite validates local host/test database names. Never supply a production DSN. The feature adds no schema migration.
 
-The full verified run passed 138 tests: 94 backend (including 12 real PostgreSQL tests and one real Chromium test) and 44 frontend. Physical microphone/speaker quality, actual iOS/Android/Safari/Firefox, cross-network NAT traversal, TURN and live Cloudflare/provider integration remain manual acceptance checks. Chromium viewport emulation is mobile layout evidence, not proof on physical mobile devices.
+The final pre-merge verified run passed 148 tests: 101 backend (including 12 real PostgreSQL tests and two real Chromium scenarios) and 47 frontend, with zero skips or failures. Incoming/active controls were checked at 320, 375, 390, 430, 768, 1024 and 1440px. Physical microphone/speaker quality, actual iOS/Android/Safari/Firefox, cross-network NAT traversal, TURN and live Cloudflare/provider integration remain manual acceptance checks. Chromium viewport emulation is mobile layout evidence, not proof on physical mobile devices.
 
 ## Release isolation
 
@@ -138,3 +138,11 @@ Development is isolated on feat/webrtc-voice-calling from fbd6deb0edfe56818ba62f
 ## Interactive local testing
 
 Run `npm run voice:manual` for real microphone/audio calls between separate Chrome profiles, with disposable in-memory data and no provider credentials. See [exact browser steps and fixture isolation](VOICE_CALLING_MANUAL.md).
+
+## Release prerequisites and rollback
+
+This branch is ready for merge review with documented limitations, not an authorization to deploy. See [the final audit and exact verification evidence](VOICE_CALLING_AUDIT.md). Before an approved release, verify HTTPS, exact CLIENT_URL, WebSocket upgrades through the existing tunnel/proxy, and microphone=(self) on the HTML response. The existing deployment example already permits same-origin microphone access. No new database migration, media storage or UDP listener on the application VPS is required by this feature. Confirm provider regression flows in a genuine staging environment when one becomes available.
+
+Build tooling retains five high npm advisory entries rooted in development-only braces (GHSA-vfj7-8cjw-p6xm); no patched braces version is listed. The production-only dependency audit is clean. Keep development servers loopback-only, do not accept untrusted build/glob inputs, and review a future Tailwind major migration separately.
+
+For a later approved rollback, restore matching frontend and backend artifacts from the previously deployed revision, including the verified WebSocket-only client configuration. The production branch fbd6deb does not contain that subsequent VPS-only transport correction; restoring its raw bundle would reintroduce the known polling compatibility problem. No call schema/state needs rollback. Backend replacement ends active calls; clients must start fresh calls. Use a separate release directory/artifact switch and the deployment owner's approved service procedure; never reset protected branches or production data.

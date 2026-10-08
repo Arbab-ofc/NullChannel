@@ -71,4 +71,6 @@ RUN_WEBRTC_BROWSER=1 npm test
 
 That test follows the same UI entry flow through the running manual harness without intercepting its API responses. Synthetic microphone flags belong only to automated browser tests. They are never passed to your ordinary Chrome windows or the interactive command. Human microphone/speaker quality must be checked manually using the steps above.
 
-Verified full-suite result: **144 passed** (100 backend, 44 frontend), with both Chromium scenarios and the 12 disposable PostgreSQL tests enabled. TypeScript checks (including the manual harness), lint and both production builds passed. Real human microphone/speaker quality was not asserted by automation.
+Final pre-merge full-suite result: **148 passed** (101 backend, 47 frontend), with both Chromium scenarios and the 12 disposable PostgreSQL tests enabled. TypeScript checks (including the manual harness), lint and both production builds passed. Real human microphone/speaker quality was not asserted by automation.
+
+The owner also confirmed successful real microphone/audio calling between two independent sessions. This is human local acceptance evidence; it does not establish cross-network connectivity. The final audit separately records automated evidence and untested providers/browsers/devices: [VOICE_CALLING_AUDIT.md](VOICE_CALLING_AUDIT.md).

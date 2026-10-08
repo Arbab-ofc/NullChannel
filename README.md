@@ -10,9 +10,9 @@ For the hardened self-managed VPS setup, use [deployment/DEPLOYMENT.md](deployme
 [![Socket.io](https://img.shields.io/badge/Socket.io-4.x-010101?logo=socket.io&logoColor=white)](https://socket.io/)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![ImageKit](https://img.shields.io/badge/ImageKit-Media-1E88E5)](https://imagekit.io/)
-[![Live App](https://img.shields.io/badge/Live_App-Vercel-000000?logo=vercel&logoColor=white)](https://null-channel-client.vercel.app/)
-[![API](https://img.shields.io/badge/API-Render-46E3B7?logo=render&logoColor=000)](https://nullchannel.onrender.com/api/health)
-[![Health](https://img.shields.io/badge/Health_Check-/api/health-3ECF8E)](https://nullchannel.onrender.com/api/health)
+[![Live App](https://img.shields.io/badge/Live_App-Ubuntu_VPS-000000?logo=ubuntu&logoColor=white)](https://nullchannel.teleflow.cyou/)
+[![API](https://img.shields.io/badge/API-Same_Origin-46E3B7?logo=nodedotjs&logoColor=000)](https://nullchannel.teleflow.cyou/api/health)
+[![Health](https://img.shields.io/badge/Health_Check-/api/health-3ECF8E)](https://nullchannel.teleflow.cyou/api/health)
 
 Short-lived, real-time channels with no signup.
 
@@ -24,10 +24,10 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Link            | URL                                                                                           |
 | --------------- | --------------------------------------------------------------------------------------------- |
-| Live app        | [https://null-channel-client.vercel.app](https://null-channel-client.vercel.app/)                |
-| Backend API     | [https://nullchannel.onrender.com](https://nullchannel.onrender.com/)                            |
-| Health check    | [https://nullchannel.onrender.com/api/health](https://nullchannel.onrender.com/api/health)       |
-| Database health | [https://nullchannel.onrender.com/api/health/db](https://nullchannel.onrender.com/api/health/db) |
+| Live app        | [NullChannel](https://nullchannel.teleflow.cyou/)                |
+| Backend API     | [Same-origin API](https://nullchannel.teleflow.cyou/api/health)                            |
+| Health check    | [https://nullchannel.teleflow.cyou/api/health](https://nullchannel.teleflow.cyou/api/health)       |
+| Database health | [https://nullchannel.teleflow.cyou/api/health/db](https://nullchannel.teleflow.cyou/api/health/db) |
 | Repository      | [https://github.com/Arbab-ofc/NullChannel](https://github.com/Arbab-ofc/NullChannel)             |
 
 ## Project Map
@@ -60,7 +60,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Feature                 | Details                                                                      |
 | ----------------------- | ---------------------------------------------------------------------------- |
-| Anonymous rooms         | No account required. Users join with a sender ID and display name.           |
+| Anonymous rooms         | No account required. Backend-issued HttpOnly sessions authenticate users; room display names remain anonymous.           |
 | Private and group rooms | Room type can be `private` or `group`.                                   |
 | Expiry controls          | Custom duration on create, one-time creator extension.                        |
 | Real-time chat          | Socket.io broadcast for messages, typing, delete events, join/leave, expiry. |
@@ -186,12 +186,13 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `v8` | Add pinned messages, file messages, and file metadata |
 | `v9` | Persist deleted-message tombstones across refreshes |
 | `v10` | Add burn-after-read messages |
+| `v11` | Secure anonymous sessions, atomic membership/room RPCs, media registry and durable cleanup |
 
 ## Prerequisites
 
 | Requirement      | Notes                                            |
 | ---------------- | ------------------------------------------------ |
-| Node.js          | Modern LTS version recommended                   |
+| Node.js          | Node 22.12+; verification uses 22.18.0                   |
 | npm              | Workspaces are used at the repo root             |
 | Supabase project | Required for database and authless storage layer |
 | ImageKit account | Required for image and voice uploads             |
@@ -208,7 +209,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
    ```
 3. Install dependencies:
    ```bash
-   npm install
+   npm ci
    ```
 4. Create environment files:
    ```bash
@@ -227,7 +228,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 | Variable         | Example                   | Required |
 | ---------------- | ------------------------- | -------- |
-| `VITE_API_URL` | `http://localhost:5050` | Yes      |
+| `VITE_API_URL` | Empty for same-origin API/socket proxy | No |
 
 ### Server
 
@@ -247,7 +248,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 
 1. Install dependencies:
    ```bash
-   npm install
+   npm ci
    ```
 2. Set client env:
    ```bash
@@ -258,7 +259,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
    cp server/.env.example server/.env
    ```
 4. Fill the server env values for Supabase and ImageKit.
-5. Apply the Supabase migrations in `docs/` in order, including `docs/supabase-migration-v10.sql` for burn-after-read messages.
+5. Apply the Supabase migrations in `docs/` in order, through `docs/supabase-migration-v11.sql`, using a disposable database for tests. Existing production databases must not be migrated without separate authorization.
 6. Run the app:
    ```bash
    npm run dev
@@ -276,11 +277,15 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | `npm run build:server` | Builds the backend                        |
 | `npm run lint`         | Lints both workspaces                     |
 | `npm run typecheck`    | Runs TypeScript checks on both workspaces |
-| `npm run test`         | Runs backend tests                        |
+| `npm run test`         | Runs backend and frontend tests                        |
 
 ## Deployment
 
-### Recommended free setup
+For the current Ubuntu VPS architecture, see [isolated same-origin deployment instructions](deployment/DEPLOYMENT.md). Voice release requirements and rollback are in [the final pre-merge audit](docs/VOICE_CALLING_AUDIT.md). No merge or deployment is authorized by these instructions.
+
+### Legacy hosting examples
+
+The examples below require a same-origin proxy or compatible same-site arrangement. Separate Vercel and Render domains do not work with the current SameSite=Strict session cookies; do not weaken cookie security to use them.
 
 | Service  | Role                               |
 | -------- | ---------------------------------- |
@@ -304,7 +309,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | Setting              | Value                                               |
 | -------------------- | --------------------------------------------------- |
 | Root directory       | Repo root                                           |
-| Build command        | `npm install && npm run build --workspace server` |
+| Build command        | `npm ci && npm run build --workspace server` |
 | Start command        | `npm run start --workspace server`                |
 | Environment variable | `CLIENT_URL=https://your-vercel-app.vercel.app`   |
 
@@ -327,7 +332,7 @@ NullChannel is a temporary chat system for private and group rooms. Users create
 | ----------------- | ------------------------------------------------------------- |
 | GitHub            | [Arbab-ofc](https://github.com/Arbab-ofc)                        |
 | Repository issues | [Open an issue](https://github.com/Arbab-ofc/NullChannel/issues) |
-| Live project      | [NullChannel](https://null-channel-client.vercel.app/)           |
+| Live project      | [NullChannel](https://nullchannel.teleflow.cyou/)           |
 
 ## Operational Notes
 

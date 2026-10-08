@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { API_URL } from './constants';
 import { ensureSession } from './session';
-export const socket = io(API_URL || undefined, { autoConnect: false, reconnection: true, withCredentials: true });
+export const socket = io(API_URL || undefined, { autoConnect: false, reconnection: true, withCredentials: true, transports: ['websocket'] });
 let renewing = false;
 let desired = false;
 export const connectSocket = () => { desired = true; socket.connect(); };

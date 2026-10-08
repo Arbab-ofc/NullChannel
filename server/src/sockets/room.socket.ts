@@ -22,12 +22,13 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
   socket.use(async ([event, payload], next) => {
     try {
       const limits: Record<string, number> = { 'join-room': env.SOCKET_JOIN_LIMIT, 'send-message': env.SOCKET_MESSAGE_LIMIT, typing: env.SOCKET_TYPING_LIMIT, 'leave-room': 30 };
-      if (!limits[event] || !allowEvent(`${socket.data.identity}:${event}`, limits[event])) {
+      const calling = event.startsWith('call:');
+      if (!calling && (!limits[event] || !allowEvent(`${socket.data.identity}:${event}`, limits[event]))) {
         socket.emit('socket-error', { code: 'RATE_LIMITED', message: 'Too many events. Please wait.' }); return;
       }
       const { data, error } = await supabase.from('anonymous_sessions').select('id').eq('id', socket.data.sessionId).is('revoked_at', null).gt('expires_at', new Date().toISOString()).gt('access_expires_at', new Date().toISOString()).maybeSingle();
       if (error || !data) { socket.emit('socket-error', { code: 'SESSION_EXPIRED', message: 'Renew your session.' }); socket.disconnect(true); return; }
-      if (payload && typeof payload === 'object' && !Array.isArray(payload)) payload.senderId = socket.data.identity;
+      if (!calling && payload && typeof payload === 'object' && !Array.isArray(payload)) payload.senderId = socket.data.identity;
       next();
     } catch { socket.emit('socket-error', { code: 'SESSION_UNAVAILABLE', message: 'Session verification failed.' }); }
   });

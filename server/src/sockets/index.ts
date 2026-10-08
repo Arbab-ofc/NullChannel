@@ -2,6 +2,7 @@ import { isIP } from 'node:net';
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { env } from '../config/env.js';
+import { registerCallSocket } from './call.socket.js';
 import { registerRoomSocket } from './room.socket.js';
 import { setSocketServer } from './emitter.js';
 import { readCookie, verifySession } from '../services/session.service.js';
@@ -43,6 +44,7 @@ export const createSocketServer = (server: HttpServer) => {
     socket.once('disconnect', () => clearInterval(sessionWatch));
     socket.emit('connection-status', { connected: true });
     registerRoomSocket(io, socket);
+    registerCallSocket(io, socket);
   });
 
   setSocketServer(io);

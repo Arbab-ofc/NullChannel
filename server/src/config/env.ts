@@ -21,6 +21,13 @@ const envSchema = z.object({
   REST_MUTATION_LIMIT: z.coerce.number().int().positive().default(120),
   REST_MANAGEMENT_LIMIT: z.coerce.number().int().positive().default(20),
   UPLOAD_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  CALL_RING_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(30000),
+  CALL_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(20000),
+  CALL_DISCONNECT_GRACE_MS: z.coerce.number().int().min(1000).max(30000).default(10000),
+  CALL_INVITE_LIMIT: z.coerce.number().int().min(1).max(30).default(6),
+  CALL_SIGNAL_LIMIT: z.coerce.number().int().min(1).max(1000).default(300),
+  CALL_MAX_CANDIDATES: z.coerce.number().int().min(16).max(512).default(256),
+  CALL_MAX_ACTIVE: z.coerce.number().int().min(1).max(10000).default(1000),
   HOST: z.string().default('127.0.0.1'),
   CLEANUP_SECRET: z.string().optional()
 });

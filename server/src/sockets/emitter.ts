@@ -1,4 +1,5 @@
 import type { Server } from 'socket.io';
+import { getCallRegistry } from './call.socket.js';
 
 let ioRef: Server | null = null;
 
@@ -7,6 +8,7 @@ export const setSocketServer = (io: Server) => {
 };
 
 export const emitRoomExpired = (roomId: string, payload: { reason: string }) => {
+  if (ioRef) getCallRegistry(ioRef).endRoom(roomId);
   ioRef?.to(roomId).emit('room-expired', payload);
   ioRef?.in(roomId).socketsLeave(roomId);
 };
@@ -35,6 +37,7 @@ export const emitMessageReactions = (
 };
 
 export const emitRoomExtended = (roomId: string, payload: { code: string; expiresAt: string; extendByMinutes: number }) => {
+  if (ioRef) getCallRegistry(ioRef).extend(roomId,payload.expiresAt);
   ioRef?.to(roomId).emit('room-extended', payload);
 };
 
@@ -47,6 +50,7 @@ export const emitRoomWiped = (roomId: string, payload: { code: string; wipedMess
 };
 
 export const revokeRoomSockets = async (roomId: string, code: string, identity: string) => {
+  if (ioRef) getCallRegistry(ioRef).endRoom(roomId,identity);
   for (const socket of await ioRef?.in(roomId).fetchSockets() ?? []) {
     if (socket.data.identity !== identity) continue;
     socket.emit('membership-revoked', { code });

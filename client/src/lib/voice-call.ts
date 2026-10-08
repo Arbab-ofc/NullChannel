@@ -1,5 +1,5 @@
 import type { Socket } from 'socket.io-client';
-import { AudioPeer, microphoneError, NETWORK_FAILURE } from './webrtc';
+import { AudioPeer, CALL_DEFAULTS, microphoneError, NETWORK_FAILURE } from './webrtc';
 
 export type CallPhase = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'connected' | 'reconnecting' | 'ended' | 'failed';
 export type CallView = { phase: CallPhase; callId: string | null; peerName: string; roomName: string; muted: boolean; playbackBlocked: boolean; connectedAt: number | null; message: string; accepting: boolean };
@@ -10,7 +10,7 @@ export const callTransitions: Record<CallPhase, readonly CallPhase[]> = {
 };
 const empty = (): CallView => ({ phase: 'idle',callId: null,peerName: '',roomName: '',muted: false,playbackBlocked: false,connectedAt: null,message: '',accepting: false });
 export const callIsActive = (phase: CallPhase) => !['idle','ended','failed'].includes(phase);
-type Invitation = { callId: string; roomCode: string; peerName: string; roomName: string };
+type Invitation = { timeouts?: typeof CALL_DEFAULTS; callId: string; roomCode: string; peerName: string; roomName: string };
 type Ack = { ok: boolean; code?: string; message?: string; callId?: string };
 export class VoiceCall {
   private view = empty();
@@ -21,8 +21,9 @@ export class VoiceCall {
   private handlers = new Map<string, (...args: unknown[]) => void>();
   private expiry: ReturnType<typeof setTimeout> | null = null;
   private generation = 0;
+  private timeouts = CALL_DEFAULTS;
   constructor(private socket: Socket, readonly roomCode: string,
-    private peerFactory: (caller: boolean, callbacks: ConstructorParameters<typeof AudioPeer>[1]) => AudioPeer = (caller,callbacks) => new AudioPeer(caller,callbacks)) {}
+    private peerFactory: (caller: boolean, callbacks: ConstructorParameters<typeof AudioPeer>[1], timeouts: typeof CALL_DEFAULTS) => AudioPeer = (caller,callbacks,timeouts) => new AudioPeer(caller,callbacks,undefined,timeouts)) {}
   snapshot = () => this.view;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private update(patch: Partial<CallView>) { if (this.disposed) return; this.view = { ...this.view,...patch }; for (const listener of this.listeners) listener(); }
@@ -43,15 +44,18 @@ export class VoiceCall {
     });
   }
   attach() {
+    if (this.handlers.size) return;
     this.disposed = false;
     const on = <T,>(event: string,handler: (payload: T) => void) => {
       const typed = (...args: unknown[]) => handler(args[0] as T); this.handlers.set(event,typed); this.socket.on(event,typed);
     };
     on<Invitation>('call:outgoing',payload => {
+      if (payload.roomCode === this.roomCode && payload.timeouts) this.timeouts = payload.timeouts;
       if (payload.roomCode === this.roomCode && this.view.phase === 'outgoing' && !this.view.callId) this.update({ callId: payload.callId,peerName: payload.peerName,roomName: payload.roomName });
     });
     on<Invitation>('call:incoming',payload => {
       if (payload.roomCode !== this.roomCode) return;
+      if (payload.timeouts) this.timeouts = payload.timeouts;
       if (this.view.phase === 'outgoing' && !this.view.callId) { this.transition('ended'); this.reset(); }
       this.reset();
       if (this.view.phase === 'idle') { this.caller = false; this.transition('incoming',{ callId: payload.callId,peerName: payload.peerName,roomName: payload.roomName }); }
@@ -59,14 +63,17 @@ export class VoiceCall {
     on<{ callId: string }>('call:accepted',payload => {
       if (payload.callId !== this.view.callId || !['incoming','outgoing'].includes(this.view.phase)) return;
       this.transition('connecting',{ accepting: false });
-      if (this.caller) { this.engine = this.createPeer(); const engine = this.engine; void engine.offer().catch(error => this.fail(microphoneError(error))); }
+      if (this.caller) {
+        try { this.engine = this.createPeer(); const engine = this.engine; void engine.offer().catch(error => { if (this.engine === engine) this.fail(microphoneError(error)); }); }
+        catch (error) { this.fail(microphoneError(error)); }
+      }
     });
     on<{ callId: string; revision: number; sdp: string }>('call:offer',payload => this.description('offer',payload));
     on<{ callId: string; revision: number; sdp: string }>('call:answer',payload => this.description('answer',payload));
     on<{ callId: string; revision: number; candidate: RTCIceCandidateInit }>('call:ice-candidate',payload => {
-      if (payload.callId === this.view.callId && this.engine) void this.engine.candidate(payload.revision,payload.candidate).catch(() => this.fail('Invalid voice connection data.'));
+      if (payload.callId === this.view.callId && this.engine) { const engine = this.engine; void engine.candidate(payload.revision,payload.candidate).catch(() => { if (this.engine === engine) this.fail('Invalid voice connection data.'); }); }
     });
-    on<{ callId: string }>('call:reconnecting',payload => { if (payload.callId === this.view.callId) this.transition('reconnecting'); });
+    on<{ callId: string }>('call:reconnecting',payload => { if (payload.callId === this.view.callId) { this.transition('reconnecting'); this.engine?.recover(); } });
     for (const event of ['call:ended','call:rejected','call:timeout']) on<{ callId: string; reason: string }>(event,payload => {
       if (payload.callId !== this.view.callId) return;
       const messages: Record<string,string> = { 'no-answer': this.caller ? 'No Answer' : 'Missed Call', declined: 'Call declined', 'connection-timeout': NETWORK_FAILURE, 'network-failed': NETWORK_FAILURE, 'peer-disconnected': 'The other participant disconnected.', 'answered-elsewhere': 'Call answered in another tab.', 'room-expired': 'The room expired.', 'membership-lost': 'Room membership ended.' };
@@ -90,8 +97,9 @@ export class VoiceCall {
   async accept() {
     if (this.view.phase !== 'incoming' || this.view.accepting) return;
     const id = this.view.callId; const generation = this.generation;
-    this.update({ accepting: true }); this.engine = this.createPeer(); const peer = this.engine;
+    this.update({ accepting: true });
     try {
+      this.engine = this.createPeer(); const peer = this.engine;
       await peer.start();
       if (this.disposed || this.generation !== generation || this.view.callId !== id) { peer.close(); return; }
       await this.request('call:accept',{ callId: id });
@@ -114,7 +122,7 @@ export class VoiceCall {
         this.transition(phase,{ connectedAt: phase === 'connected' ? this.view.connectedAt ?? Date.now() : this.view.connectedAt });
         void this.request(`call:${phase}`,{ callId: id }).catch(() => { if (current()) this.fail('Voice signaling was interrupted. Please call again.'); });
       }, error: message => { if (current()) this.fail(message); }, playback: blocked => { if (current()) this.update({ playbackBlocked: blocked }); }
-    });
+    },this.timeouts);
   }
   private description(kind: 'offer' | 'answer',payload: { callId: string; revision: number; sdp: string }) {
     if (payload.callId !== this.view.callId || !this.engine) return;

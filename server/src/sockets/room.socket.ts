@@ -19,10 +19,15 @@ export const registerRoomSocket = (io: Server, socket: Socket) => {
     const roomIds = [...socket.rooms].filter(room => /^[0-9a-f-]{36}$/i.test(room));
     setImmediate(() => { for (const roomId of roomIds) void emitPresence(roomId).catch(() => undefined); });
   });
-  socket.use(async ([event, payload], next) => {
+  socket.use(async ([event, payload, acknowledgement], next) => {
     try {
       const limits: Record<string, number> = { 'join-room': env.SOCKET_JOIN_LIMIT, 'send-message': env.SOCKET_MESSAGE_LIMIT, typing: env.SOCKET_TYPING_LIMIT, 'leave-room': 30 };
-      const calling = event.startsWith('call:');
+      const calling = ['call:invite','call:accept','call:reject','call:offer','call:answer','call:ice-candidate','call:end','call:connected','call:reconnecting'].includes(event);
+      if (calling && !allowEvent(`${socket.data.identity}:call-packets`,env.CALL_SIGNAL_LIMIT*2)) {
+        const failure = { ok: false,code: 'RATE_LIMITED',message: 'Too many call events. Please wait.' };
+        if (typeof acknowledgement === 'function') acknowledgement(failure);
+        socket.emit('call:error',failure); return;
+      }
       if (!calling && (!limits[event] || !allowEvent(`${socket.data.identity}:${event}`, limits[event]))) {
         socket.emit('socket-error', { code: 'RATE_LIMITED', message: 'Too many events. Please wait.' }); return;
       }

@@ -35,6 +35,7 @@ export class AudioPeer {
   private localCandidates: Array<{ revision: number; candidate: RTCIceCandidateInit }> = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private negotiating = false;
+  private muted = false;
   private deviceListener = () => { if (this.audio?.srcObject) void this.play(); };
   constructor(private caller: boolean, private callbacks: AudioCallbacks,
     private config: RTCConfiguration = iceConfiguration(), private timeouts = CALL_DEFAULTS) {}
@@ -51,13 +52,16 @@ export class AudioPeer {
       const pc = new RTCPeerConnection(this.config); this.pc = pc;
       const audio = document.createElement('audio'); this.audio = audio; audio.autoplay = true; audio.setAttribute('playsinline','');
       navigator.mediaDevices.addEventListener?.('devicechange',this.deviceListener);
-      stream.getAudioTracks().forEach(track => { pc.addTrack(track,stream); track.onended = () => this.fail('The microphone was disconnected.'); });
+      stream.getAudioTracks().forEach(track => { track.enabled = !this.muted; pc.addTrack(track,stream); track.onended = () => this.fail('The microphone was disconnected.'); });
       pc.ontrack = event => {
         if (this.closed || event.track.kind !== 'audio') return;
         audio.srcObject = event.streams[0] ?? new MediaStream([event.track]); void this.play();
       };
+      let gathered = 0;
+      pc.onicegatheringstatechange = () => { if (!this.closed && pc.iceGatheringState === 'complete' && gathered === 0) this.fail(NETWORK_FAILURE); };
       pc.onicecandidate = event => {
         if (this.closed || !event.candidate || !this.revision) return;
+        gathered += 1;
         const candidate = event.candidate.toJSON();
         const ufrag = candidate.usernameFragment;
         if (ufrag && !pc.localDescription?.sdp.includes(`a=ice-ufrag:${ufrag}`)) return;
@@ -89,9 +93,10 @@ export class AudioPeer {
     else if (state === 'failed') this.fail(NETWORK_FAILURE);
   }
   private recovering = false;
-  private reconnecting() {
+  recover() { this.reconnecting(false); }
+  private reconnecting(notify = true) {
     if (this.closed || this.recovering) return;
-    this.recovering = true; this.callbacks.state('reconnecting'); this.deadline(this.timeouts.disconnectMs);
+    this.recovering = true; if (notify) this.callbacks.state('reconnecting'); this.deadline(this.timeouts.disconnectMs);
     // A deterministic caller is the only offerer, including ICE restarts.
     if (this.caller) void this.offer(true).catch(() => this.fail(NETWORK_FAILURE));
   }
@@ -137,7 +142,7 @@ export class AudioPeer {
     if (!this.pc?.remoteDescription || this.remoteRevision !== revision) this.candidates.push({ revision,candidate });
     else await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
   }
-  mute(muted: boolean) { this.stream?.getAudioTracks().forEach(track => { track.enabled = !muted; }); }
+  mute(muted: boolean) { this.muted = muted; this.stream?.getAudioTracks().forEach(track => { track.enabled = !muted; }); }
   async play() {
     if (!this.audio || this.closed) return;
     try { await this.audio.play(); if (!this.closed) this.callbacks.playback(false); }
@@ -148,7 +153,7 @@ export class AudioPeer {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
     navigator.mediaDevices?.removeEventListener?.('devicechange',this.deviceListener);
     this.stream?.getTracks().forEach(track => { track.onended = null; track.stop(); }); this.stream = null;
-    if (this.pc) { this.pc.ontrack = null; this.pc.onicecandidate = null; this.pc.onconnectionstatechange = null; this.pc.oniceconnectionstatechange = null; this.pc.close(); this.pc = null; }
+    if (this.pc) { this.pc.onicegatheringstatechange = null; this.pc.ontrack = null; this.pc.onicecandidate = null; this.pc.onconnectionstatechange = null; this.pc.oniceconnectionstatechange = null; this.pc.close(); this.pc = null; }
     if (this.audio) { this.audio.pause(); this.audio.srcObject = null; this.audio.remove(); this.audio = null; }
     this.candidates = []; this.localCandidates = [];
   }

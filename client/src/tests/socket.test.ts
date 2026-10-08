@@ -13,7 +13,7 @@ describe('socket lifecycle and session renewal', () => {
   it('uses cookie credentials, automatic reconnection and a single socket instance', async () => {
     const a = await import('../lib/socket'); const b = await import('../lib/socket');
     expect(a.socket).toBe(b.socket); expect(io).toHaveBeenCalledOnce();
-    expect(io).toHaveBeenCalledWith(undefined,expect.objectContaining({ autoConnect: false, reconnection: true, withCredentials: true }));
+    expect(io).toHaveBeenCalledWith(undefined,expect.objectContaining({ autoConnect: false, reconnection: true, withCredentials: true,transports: ['websocket'] }));
   });
   it('reauthenticates an expired handshake before reconnecting', async () => {
     const { connectSocket } = await import('../lib/socket'); connectSocket(); renew.mockResolvedValue('identity');

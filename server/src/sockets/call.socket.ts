@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
+import { readCookie, verifySession } from '../services/session.service.js';
+import { accessCookie } from '../middlewares/auth.middleware.js';
 import { env } from '../config/env.js';
 import { getRoomByCode } from '../services/room.service.js';
 import { getParticipantsForRoom } from '../services/membership.service.js';
@@ -11,7 +13,7 @@ type Participant = { identity: string; socketId: string; name: string };
 export type CallSession = {
   callId: string; roomId: string; roomCode: string; roomName: string;
   caller: Participant; callee: Participant; status: 'ringing' | 'connecting' | 'connected';
-  createdAt: number; acceptedAt?: number; revision: number; answered: boolean;
+  createdAt: number; acceptedAt?: number; recovering: boolean; revision: number; answered: boolean;
   candidates: Map<string, number>; connected: Set<string>; timer: ReturnType<typeof setTimeout>;
   expiryTimer: ReturnType<typeof setTimeout>;
 };
@@ -70,18 +72,28 @@ export class CallRegistry {
     const other = members.find(member => member.sender_id !== socket.data.identity)!;
     if (this.busy.has(socket.data.identity) || this.busy.has(other.sender_id)) throw new CallFailure('BUSY','One participant is already in a call.');
     if (this.calls.size >= env.CALL_MAX_ACTIVE) throw new CallFailure('BUSY','Calling is temporarily at capacity.');
-    const peers = [...this.io.sockets.sockets.values()].filter(peer => peer.data.identity === other.sender_id && peer.rooms.has(room.id) && peer.connected);
+    const online = [...this.io.sockets.sockets.values()].filter(peer => peer.data.identity === other.sender_id && peer.rooms.has(room.id) && peer.connected);
+    const peers: Socket[] = [];
+    for (const peer of online.slice(0,8)) {
+      const session = await verifySession(readCookie(peer.request.headers.cookie,accessCookie()));
+      if (session && session.identity_id === peer.data.identity && session.id === peer.data.sessionId && peer.connected && peer.rooms.has(room.id)) peers.push(peer);
+    }
+    // No await between these final checks and acquiring both identity locks.
+    if (!socket.connected || !socket.rooms.has(room.id) || Date.parse(room.expires_at) <= Date.now()) throw new CallFailure('ROOM_EXPIRED','The room is no longer available.');
+    if (this.busy.has(socket.data.identity) || this.busy.has(other.sender_id)) throw new CallFailure('BUSY','One participant is already in a call.');
+    if (this.calls.size >= env.CALL_MAX_ACTIVE) throw new CallFailure('BUSY','Calling is temporarily at capacity.');
     if (!peers.length) throw new CallFailure('PEER_OFFLINE','The other participant is not connected.');
     const caller = members.find(member => member.sender_id === socket.data.identity)!;
     const id = randomUUID();
     const call: CallSession = { callId: id, roomId: room.id, roomCode: code, roomName: room.room_name,
       caller: { identity: socket.data.identity, socketId: socket.id, name: caller.sender_name },
       callee: { identity: other.sender_id, socketId: '', name: other.sender_name }, status: 'ringing', createdAt: Date.now(),
-      revision: 0, answered: false, candidates: new Map(), connected: new Set(),
+      revision: 0, recovering: false, answered: false, candidates: new Map(), connected: new Set(),
       timer: setTimeout(() => this.end(id,'no-answer'),env.CALL_RING_TIMEOUT_MS), expiryTimer: this.expiry(id,room.expires_at) };
     call.timer.unref(); this.calls.set(id,call); this.busy.set(call.caller.identity,id); this.busy.set(call.callee.identity,id);
-    socket.emit('call:outgoing',{ callId: id, roomCode: code, peerName: call.callee.name, roomName: room.room_name });
-    for (const peer of peers) peer.emit('call:incoming',{ callId: id, roomCode: code, peerName: call.caller.name, roomName: room.room_name });
+    const timeouts = { ringMs: env.CALL_RING_TIMEOUT_MS,connectMs: env.CALL_CONNECT_TIMEOUT_MS,disconnectMs: env.CALL_DISCONNECT_GRACE_MS };
+    socket.emit('call:outgoing',{ timeouts,callId: id, roomCode: code, peerName: call.callee.name, roomName: room.room_name });
+    for (const peer of peers) peer.emit('call:incoming',{ timeouts,callId: id, roomCode: code, peerName: call.caller.name, roomName: room.room_name });
     return { ok: true, callId: id };
   }
   async authorize(socket: Socket, callId: string) {
@@ -93,6 +105,12 @@ export class CallRegistry {
       const { members } = await this.eligible(socket,call.roomCode);
       if (!members.some(m => m.sender_id === call.caller.identity) || !members.some(m => m.sender_id === call.callee.identity)) throw new Error('Membership changed');
     } catch (error) { this.end(callId,'room-unavailable'); throw error; }
+    const otherId = role === 'caller' ? call.callee.socketId : call.caller.socketId;
+    if (otherId) {
+      const other = this.io.sockets.sockets.get(otherId);
+      const session = other ? await verifySession(readCookie(other.request.headers.cookie,accessCookie())) : null;
+      if (!other || !session || session.identity_id !== other.data.identity || session.id !== other.data.sessionId) { this.end(callId,'session-ended'); throw new CallFailure('SESSION_EXPIRED','The peer session ended.'); }
+    }
     if (!this.calls.has(callId)) throw new CallFailure('INVALID_CALL','This call has ended.');
     return { call, role };
   }
@@ -111,7 +129,7 @@ export class CallRegistry {
     }
     if (call.status === 'ringing') throw new CallFailure('INVALID_STATE','Accept the call before negotiating.');
     const target = role === 'caller' ? call.callee.socketId : call.caller.socketId;
-    if (!this.io.sockets.sockets.get(target)?.connected) { this.end(call.callId,'peer-disconnected'); throw new CallFailure('DISCONNECTED','The other participant disconnected.'); }
+    if (!this.io.sockets.sockets.get(target)?.connected || !this.io.sockets.sockets.get(target)?.rooms.has(call.roomId)) { this.end(call.callId,'peer-disconnected'); throw new CallFailure('DISCONNECTED','The other participant disconnected.'); }
     if (event === 'call:offer') {
       if (role !== 'caller' || data.revision !== call.revision+1 || (call.revision > 0 && !call.answered)) throw new CallFailure('INVALID_STATE','Offer is out of sequence.');
       call.revision = data.revision; call.answered = false;
@@ -126,11 +144,12 @@ export class CallRegistry {
     } else if (event === 'call:connected') {
       if (!call.answered) throw new CallFailure('INVALID_STATE','Negotiation is incomplete.');
       call.connected.add(socket.data.identity);
-      if (call.connected.size === 2) { call.status = 'connected'; clearTimeout(call.timer); this.emit(call,'call:connected'); }
+      if (call.connected.size === 2) { call.status = 'connected'; call.recovering = false; clearTimeout(call.timer); this.emit(call,'call:connected'); }
       return { ok: true };
     } else if (event === 'call:reconnecting') {
+      if (call.recovering) return { ok: true };
       if (call.status !== 'connected') throw new CallFailure('INVALID_STATE','The call is not connected.');
-      call.status = 'connecting'; call.connected.clear(); this.timeout(call,env.CALL_DISCONNECT_GRACE_MS,'network-failed');
+      call.status = 'connecting'; call.recovering = true; call.connected.clear(); this.timeout(call,env.CALL_DISCONNECT_GRACE_MS,'network-failed');
       this.emit(call,'call:reconnecting'); return { ok: true };
     }
     this.io.to(target).emit(event,data); return { ok: true };

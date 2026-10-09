@@ -9,6 +9,7 @@ import { VoiceCallButton, VoiceCallUI } from '../components/call/VoiceCallUI';
 import { callIsActive } from '../lib/voice-call';
 import { useSocket } from '../hooks/useSocket';
 import { useLocalSender } from '../hooks/useLocalSender';
+import { useVisibleViewport } from '../hooks/useVisibleViewport';
 import { useTranscriptScroll } from '../hooks/useTranscriptScroll';
 import { useSeenMessages } from '../hooks/useSeenMessages';
 import { ExpiryCountdown } from '../components/chat/ExpiryCountdown';
@@ -88,6 +89,7 @@ export default function ChatPage() {
   const historyEpoch = useRef(0);
   const dirtyMessageIds = useRef(new Set<string>());
   const wipedAt = useRef(0);
+  const viewport = useVisibleViewport();
   const transcript = useTranscriptScroll(messages,notices,code);
   const receiveMessage = transcript.receive;
   useSeenMessages(transcript.element,code.toUpperCase(),senderId,messages,isJoined);
@@ -860,7 +862,7 @@ export default function ChatPage() {
     </div>
   </main>;
 
-  return <main className="mx-auto grid h-[100dvh] w-full max-w-7xl gap-2 overflow-hidden bg-bg px-2 py-2 sm:gap-3 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-4 lg:px-8 lg:py-6">
+  return <main style={viewport} className="chat-shell bg-bg">
     {!senderName && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
       <div className="neo-panel w-full max-w-md p-6">
         <p className="code-font text-xs tracking-[0.2em] text-cyan">ENTER DISPLAY NAME</p>
@@ -915,8 +917,8 @@ export default function ChatPage() {
         </div>
       </div>
     )}
-    <section className="order-1 flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden sm:gap-3 lg:order-1 lg:gap-4">
-      <header className="chat-header neo-panel shrink-0 p-2 sm:p-4 lg:p-5">
+    <section className="chat-workspace">
+      <header className="chat-header neo-panel shrink-0 p-2 sm:p-3">
         <div className="chat-header__summary">
           <div className="chat-header__identity min-w-0">
             <p className="code-font hidden text-xs tracking-[0.2em] text-cyan sm:block">NULLCHANNEL / SESSION ACTIVE</p>
@@ -931,31 +933,6 @@ export default function ChatPage() {
           <span role="status" className={`connection-status ${isJoined && connected ? '' : 'connection-status--idle'}`}>
             {isJoined && connected && <Radio className="connection-status__icon" />}{!isJoined ? 'Not Joined' : connected ? 'Connected' : socket.active ? 'Reconnecting…' : 'Disconnected'}
           </span>
-        </div>
-        <div className="mt-4 hidden flex-wrap gap-2 xl:flex">
-          {room.creator_id !== senderId && (
-            <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : () => joinCurrentRoom()} disabled={(joinBusy && !isJoined) || leaveBusy}>
-              <DoorOpen className="mr-2 inline h-4 w-4" />
-              {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
-            </Button>
-          )}
-          <ThemeToggle />
-          <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
-          <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
-          <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
-          {room.creator_id === senderId && (
-            <Button
-              className="border-cyan text-cyan"
-              onClick={() => { closeMenu(); setExtendModalOpen(true); }}
-              disabled={!!room.expiry_extended || !!extendBusy}
-              title={room.expiry_extended ? 'This channel has already been extended' : 'Extend expiry'}
-            >
-              <TimerReset className="mr-2 inline h-4 w-4" />
-              {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend'}
-            </Button>
-          )}
-          {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
-          {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
         </div>
         <CommandCenter immediate={extendModalOpen || voiceView.phase === 'incoming'} open={menuOpen} close={closeMenu} code={room.code}>
           <section className="command-group"><h3>Appearance</h3><div><ThemeToggle /></div></section>
@@ -981,10 +958,10 @@ export default function ChatPage() {
               )}
             </div></section>
           <section className="command-group"><h3>Navigation</h3><div><Button onClick={() => { closeMenu(); nav('/'); }}><House className="mr-2 inline h-4 w-4" />Home</Button></div></section>
-          <section className="command-group command-group--danger"><h3>Danger Zone</h3><div>
+          {room.creator_id === senderId && <section className="command-group command-group--danger"><h3>Danger Zone</h3><div>
               {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
               {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
-            </div></section>
+            </div></section>}
         </CommandCenter>
       </header>
       <VoiceCallUI view={voiceView} call={voiceCall} microphoneBusy={recordingVoice || uploadingVoice} />
@@ -1205,7 +1182,7 @@ export default function ChatPage() {
       </div>
     )}
 
-    <footer className="neo-panel z-10 shrink-0 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-3">
+    <footer className="chat-composer neo-panel z-10 shrink-0 p-2">
       <div className="grid gap-2">
         {replyingTo && (
           <div className="composer-reply">
@@ -1300,7 +1277,32 @@ export default function ChatPage() {
     </footer>
     </section>
 
-    <aside className="neo-panel order-2 hidden min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4 lg:order-2 lg:block">
+    <aside className="chat-context neo-panel hidden min-h-0 min-w-0 overflow-y-auto p-3 xl:block">
+        <div className="desktop-session-controls">
+          {room.creator_id !== senderId && (
+            <Button className={!isJoined ? 'bg-accent text-bg' : ''} onClick={isJoined ? leaveRoom : () => joinCurrentRoom()} disabled={(joinBusy && !isJoined) || leaveBusy}>
+              <DoorOpen className="mr-2 inline h-4 w-4" />
+              {leaveBusy ? <LoadingSignal label="Leaving" /> : isJoined ? 'Leave Room' : (joinBusy ? <LoadingSignal label="Joining" /> : 'Join Room')}
+            </Button>
+          )}
+          <ThemeToggle />
+          <Button onClick={() => copyToClipboard(room.code, 'Channel ID copied')}><Copy className="mr-2 inline h-4 w-4" />Copy Channel ID</Button>
+          <Button onClick={() => copyToClipboard(window.location.href, 'Invite link copied')}><Link2 className="mr-2 inline h-4 w-4" />Copy Invite Link</Button>
+          <Button onClick={() => nav('/')}><House className="mr-2 inline h-4 w-4" />Home</Button>
+          {room.creator_id === senderId && (
+            <Button
+              className="border-cyan text-cyan"
+              onClick={() => { closeMenu(); setExtendModalOpen(true); }}
+              disabled={!!room.expiry_extended || !!extendBusy}
+              title={room.expiry_extended ? 'This channel has already been extended' : 'Extend expiry'}
+            >
+              <TimerReset className="mr-2 inline h-4 w-4" />
+              {extendBusy ? <LoadingSignal label="Extending" /> : 'Extend'}
+            </Button>
+          )}
+          {room.creator_id === senderId && <Button className="border-punch text-punch" onClick={panicWipeRoom} disabled={wipeBusy}><Siren className="mr-2 inline h-4 w-4" />{wipeBusy ? <LoadingSignal label="Wiping" /> : 'Panic Wipe'}</Button>}
+          {room.creator_id === senderId && <Button className="border-red-400 text-red-300" onClick={terminateRoom} disabled={terminateBusy}><Power className="mr-2 inline h-4 w-4" />{terminateBusy ? <LoadingSignal label="Terminating" /> : 'Terminate'}</Button>}
+        </div>
       <div className="mb-5 border-b-2 border-accent/40 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="code-font flex items-center gap-2 text-xs tracking-[0.2em] text-cyan"><Radio className="h-4 w-4" />PARTICIPANTS</p>

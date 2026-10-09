@@ -1,7 +1,8 @@
 import { TimerReset, UserCheck, MessageCircle, ArrowRight, Fingerprint, Users, LockKeyhole } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Menu } from 'lucide-react';
+import { NavigationOverlay } from '../components/common/NavigationOverlay';
 import { Button } from '../components/common/Button';
 import { api } from '../lib/api';
 import { useLocalSender } from '../hooks/useLocalSender';
@@ -23,6 +24,7 @@ export default function LandingPage() {
   const [creatorName, setCreatorName] = useState('');
   const [expiresInMinutes, setExpiresInMinutes] = useState<(typeof expiryOptions)[number]['value']>(1440);
   const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false),[]);
   const [createType, setCreateType] = useState<'private' | 'group' | null>(null);
   const [createBusy, setCreateBusy] = useState<'private' | 'group' | null>(null);
   const [createError, setCreateError] = useState('');
@@ -76,37 +78,28 @@ export default function LandingPage() {
           <p className="code-font text-xs tracking-[0.3em] text-cyan">NULLCHANNEL / PRIVATE RELAY</p>
           <h1 className="mt-1 text-2xl font-bold uppercase tracking-wide">NullChannel</h1>
         </div>
-        <div className="hidden items-center gap-4 lg:flex">
+        <div className="hidden items-center gap-4 xl:flex">
           <ThemeToggle />
           <Button onClick={() => setCreateType('private')}>Create Private</Button>
           <Button onClick={() => setCreateType('group')}>Create Group</Button>
         </div>
         <button
-          className="neo-action inline-flex h-11 w-11 items-center justify-center border-2 border-accent bg-panel lg:hidden"
+          className="neo-action inline-flex h-11 w-11 items-center justify-center border-2 border-accent bg-panel xl:hidden"
           onClick={() => setMenuOpen((v) => !v)}
           aria-label="Toggle menu"
+          aria-expanded={menuOpen}
+          aria-controls="public-navigation"
         >
-          {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <Menu className="h-5 w-5" />
         </button>
       </header>
-      <>
-        <button
-          className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-250 lg:hidden ${menuOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
-          onClick={() => setMenuOpen(false)}
-          aria-label="Close menu"
-        />
-        <aside className={`fixed right-0 top-0 z-50 h-full w-[82%] max-w-sm border-l-2 border-accent bg-panel p-4 shadow-panel transition-transform duration-300 ease-out lg:hidden ${menuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="mb-4 flex items-center justify-between">
-            <p className="code-font text-xs tracking-[0.2em] text-cyan">QUICK ACTIONS</p>
-            <button className="neo-action inline-flex h-10 w-10 items-center justify-center border-2 border-accent bg-panel" onClick={() => setMenuOpen(false)}><X className="h-5 w-5" /></button>
-          </div>
-          <div className="grid gap-2">
-            <ThemeToggle />
-            <Button onClick={() => setCreateType('private')}>Create Private</Button>
-            <Button onClick={() => setCreateType('group')}>Create Group</Button>
-          </div>
-        </aside>
-      </>
+      <NavigationOverlay id="public-navigation" title="Navigation" open={menuOpen} close={closeMenu} immediate={createType !== null}>
+        <section className="command-group"><h3>Appearance</h3><div><ThemeToggle /></div></section>
+        <section className="command-group"><h3>Channels</h3><div>
+          <Button onClick={() => { closeMenu(); setCreateType('private'); }}>Create Private</Button>
+          <Button onClick={() => { closeMenu(); setCreateType('group'); }}>Create Group</Button>
+        </div></section>
+      </NavigationOverlay>
 
       <section className="neo-panel hero-transmission relative overflow-hidden p-5 sm:p-8 lg:p-10">
         <div className="hero-signal-band" aria-hidden="true" />
